@@ -90,6 +90,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   width:var(--sidebar-w); flex-shrink:0; box-sizing:border-box;
   position:sticky; top:var(--header-h); height:calc(100vh - var(--header-h)); overflow-y:auto; overflow-x:hidden;
   padding:20px 14px; background:var(--sidebar-bg); border-right:1px solid var(--line);
+  display:flex; flex-direction:column;
 }
 .sidebar-watermark{
   position:absolute; left:-50px; bottom:60px; width:300px; height:300px;
@@ -103,6 +104,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .nav-tab:hover{ background:var(--surface-2); color:var(--ink); }
 .nav-tab.is-active{ background:var(--accent-strong); color:#fff; border-left-color:transparent; border-radius:9px; }
+.solo-admin{ display:none; }
+body.es-admin .solo-admin{ display:block; }
 
 main{ flex:1; min-width:0; max-width:1020px; padding:32px 32px 90px; }
 [data-view]{ display:none; }
@@ -331,11 +334,23 @@ body.mostrando-app #contenedor-app{ display:contents; }
 .login-error{ background:var(--coral-soft); color:var(--coral); font-size:.82rem; padding:10px 14px; border-radius:10px; text-align:left; }
 .login-submit{ width:100%; justify-content:center; margin-top:6px; padding:12px; font-size:.95rem; }
 .login-submit:disabled{ opacity:.6; cursor:default; }
-.header-usuario{ display:flex; align-items:center; gap:10px; margin-left:14px; padding-left:14px; border-left:1px solid var(--line); font-size:.82rem; color:var(--ink-soft); }
-.header-usuario .nombre{ font-weight:600; color:var(--ink); }
-.header-usuario .badge-rol{ font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; background:var(--accent-soft); color:var(--accent-strong); padding:2px 8px; border-radius:999px; }
-.header-usuario button{ background:none; border:none; color:var(--ink-faint); font-size:.8rem; cursor:pointer; text-decoration:underline; padding:0; }
-.header-usuario button:hover{ color:var(--coral); }
+.sidebar-usuario{
+  display:flex; align-items:center; gap:8px; margin-top:auto; padding-top:14px;
+  border-top:1px solid rgba(43,51,40,.15); position:relative; z-index:1;
+}
+.sidebar-usuario .avatar-mini{
+  width:34px; height:34px; border-radius:50%; background:var(--accent-strong); color:#fff;
+  display:flex; align-items:center; justify-content:center; font-size:.76rem; font-weight:700; flex-shrink:0;
+}
+.sidebar-usuario .info{ flex:1; min-width:0; display:flex; flex-direction:column; }
+.sidebar-usuario .info .nombre{ font-size:.82rem; font-weight:600; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sidebar-usuario .info .rol{ font-size:.68rem; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.04em; }
+.sidebar-usuario .acciones{ display:flex; gap:1px; flex-shrink:0; }
+.sidebar-usuario .acciones button{
+  border:none; background:transparent; cursor:pointer; font-size:1rem; padding:6px; border-radius:8px;
+  color:var(--ink-soft); line-height:1; transition:background .12s ease, color .12s ease;
+}
+.sidebar-usuario .acciones button:hover{ background:var(--surface); color:var(--ink); }
 
 /* ============================================================
    9. IMPRESIÓN
@@ -395,7 +410,6 @@ body.mostrando-app #contenedor-app{ display:contents; }
   </div>
   <div class="app-header-spacer"></div>
   <div class="save-indicator" id="save-indicator"><span class="dot"></span><span id="save-indicator-text">Guardado</span></div>
-  <div class="header-usuario" id="header-usuario"></div>
 </header>
 
 <div class="app-shell">
@@ -405,6 +419,7 @@ body.mostrando-app #contenedor-app{ display:contents; }
     <button class="nav-tab" data-action="ir-vista" data-vista="catalogo">Catálogo</button>
   </nav>
   <img class="sidebar-watermark" src="data:image/png;base64,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" alt="" aria-hidden="true">
+  <div class="sidebar-usuario" id="sidebar-usuario"></div>
 </aside>
 
 <main id="app">
@@ -465,6 +480,17 @@ body.mostrando-app #contenedor-app{ display:contents; }
       <button class="btn btn-primary" data-action="imprimir">🖨 Imprimir / Guardar como PDF</button>
     </div>
     <div id="vista-costos-personal-contenido"></div>
+  </section>
+
+  <!-- ================= VISTA: CONFIGURACIONES ================= -->
+  <section data-view="admin">
+    <div class="view-head">
+      <div>
+        <h1>Configuraciones</h1>
+        <div class="sub">Instrucciones, usuarios, copia de seguridad y ajustes de la empresa.</div>
+      </div>
+    </div>
+    <div id="admin-contenido"></div>
   </section>
 
 </main>
@@ -571,7 +597,13 @@ const ui = {
   filtroClientes: '',
   modalItemId: null,
   modalPersonalId: null,
-  usuarioActual: null // { id, email, nombre, rol } — se llena en iniciarApp() tras el login
+  usuarioActual: null, // { id, email, nombre, rol } — se llena en iniciarApp() tras el login
+  adminSubVista: 'usuarios',
+  adminUsuarios: [],
+  adminCargandoUsuarios: false,
+  modalUsuarioAbierto: false,
+  modalUsuarioError: null,
+  modalUsuarioEnviando: false
 };
 
 /* ============================================================
@@ -872,6 +904,7 @@ let _guardarPendiente = false;
 // que un ítem pueda referenciarlo). Un mutex simple evita que dos guardados se crucen si uno
 // todavía sigue en camino por la red cuando el siguiente debounce dispara.
 async function guardar() {
+  if (!state) return; // beforeunload/visibilitychange puede disparar esto antes de iniciar sesión
   if (_guardando) { _guardarPendiente = true; return; }
   _guardando = true;
   marcarGuardando();
@@ -1463,6 +1496,8 @@ function aplicarCampo(entidad, id, campo, valor) {
   else if (entidad === 'registroPersonal') { const c = clienteActivo(); if (c) { const r = c.manoDeObra.find(x => x.id === id); if (r) r[campo] = valor; } }
   else if (entidad === 'conceptoPersonal') { const r = registroPersonalActivo(); if (r) { const cp = r.conceptos.find(x => x.id === id); if (cp) cp[campo] = valor; } }
   else if (entidad === 'anticipoPersonal') { const r = registroPersonalActivo(); if (r) { const a = r.anticipos.find(x => x.id === id); if (a) a[campo] = valor; } }
+  else if (entidad === 'empresa') { state.empresa[campo] = valor; }
+  else if (entidad === 'empresaAiu') { state.empresa.aiuDefecto[campo] = valor; }
 }
 
 function aplicarCatalogoAResurso(recId, hit) {
@@ -1519,6 +1554,7 @@ function mostrarVista(nombre, params) {
   else if (nombre === 'vista-costos-personal') renderVistaCostosPersonal();
   else if (nombre === 'listado-clientes') renderListadoClientes();
   else if (nombre === 'editor-cliente') renderEditorCliente();
+  else if (nombre === 'admin') { renderVistaAdmin(); cargarUsuariosAdmin(); }
 }
 function restaurarUltimaVista() {
   let uv = null;
@@ -1534,6 +1570,7 @@ function restaurarUltimaVista() {
   if (uv.vista === 'editor-presupuesto' && !state.presupuestos.find(p => p.id === ui.presupuestoActivoId)) { mostrarVista('listado-clientes'); return; }
   if (uv.vista === 'vista-cliente' && !state.presupuestos.find(p => p.id === ui.vistaClienteId)) { mostrarVista('listado-clientes'); return; }
   if (uv.vista === 'vista-costos-personal') { mostrarVista(uv.vista, { registroId: uv.vistaCostosPersonalRegistroId }); return; }
+  if (uv.vista === 'admin' && (!ui.usuarioActual || ui.usuarioActual.rol !== 'admin')) { mostrarVista('listado-clientes'); return; }
   mostrarVista(uv.vista);
 }
 
@@ -2376,6 +2413,220 @@ function elegirOpcionCombobox(nombre) {
 }
 
 /* ============================================================
+   16D. RENDER — ADMIN
+   ============================================================ */
+async function cargarUsuariosAdmin() {
+  ui.adminCargandoUsuarios = true;
+  if (ui.vista === 'admin') renderVistaAdmin();
+  const { data, error } = await sb.from('profiles').select('id, nombre, rol, created_at').order('created_at');
+  ui.adminUsuarios = error ? [] : (data || []);
+  ui.adminCargandoUsuarios = false;
+  if (ui.vista === 'admin') renderVistaAdmin();
+}
+
+async function cambiarRolUsuario(id, nuevoRol) {
+  const usuario = ui.adminUsuarios.find(u => u.id === id);
+  const rolAnterior = usuario ? usuario.rol : null;
+  if (usuario) usuario.rol = nuevoRol; // optimista, se revierte abajo si falla
+  renderVistaAdmin();
+  const { error } = await sb.from('profiles').update({ rol: nuevoRol }).eq('id', id);
+  if (error) {
+    if (usuario) usuario.rol = rolAnterior;
+    renderVistaAdmin();
+    alert('No se pudo cambiar el rol: ' + error.message);
+  }
+}
+
+async function guardarNombreUsuario(id, nombre) {
+  const usuario = ui.adminUsuarios.find(u => u.id === id);
+  if (!usuario || usuario.nombre === nombre) return; // sin cambios reales
+  const anterior = usuario.nombre;
+  usuario.nombre = nombre; // optimista
+  const { error: errPerfil } = await sb.from('profiles').update({ nombre }).eq('id', id);
+  if (errPerfil) {
+    usuario.nombre = anterior;
+    renderVistaAdmin();
+    alert('No se pudo guardar el nombre: ' + errPerfil.message);
+    return;
+  }
+  // El nombre para la app ya quedó guardado en profiles (arriba). Además se refleja en el
+  // "Display name" que Supabase muestra en su propio Dashboard (Authentication > Users) —
+  // eso vive en auth.users, que solo la clave service_role puede tocar, por eso pasa por
+  // esta Edge Function en vez de un update directo desde aquí.
+  const { error: errAuth } = await sb.functions.invoke('admin-actualizar-usuario', { body: { id, nombre } });
+  if (errAuth) console.error('El nombre quedó guardado en la app, pero no se pudo sincronizar con Supabase Auth:', errAuth);
+  if (ui.usuarioActual && ui.usuarioActual.id === id) {
+    ui.usuarioActual.nombre = nombre;
+    renderSidebarUsuario();
+  }
+}
+
+function descargarCopiaSeguridad() {
+  const datos = { exportadoEn: new Date().toISOString(), ...clonarProfundo(state) };
+  const blob = new Blob([JSON.stringify(datos, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `odetta-copia-seguridad-${hoyISO()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function abrirModalNuevoUsuario() {
+  ui.modalUsuarioAbierto = true;
+  ui.modalUsuarioError = null;
+  renderModalNuevoUsuario();
+  document.getElementById('modal-overlay').classList.add('is-open');
+}
+function cerrarModalNuevoUsuario() {
+  ui.modalUsuarioAbierto = false;
+  document.getElementById('modal-overlay').classList.remove('is-open');
+}
+function renderModalNuevoUsuario() {
+  const modal = document.getElementById('modal-content');
+  modal.innerHTML = `
+    <div class="modal-head">
+      <h3>Nuevo usuario</h3>
+      <button class="btn btn-icon btn-ghost" data-action="cerrar-modal-usuario">✕</button>
+    </div>
+    <form id="form-nuevo-usuario">
+      <div class="field-grid">
+        <div class="field"><label>Nombre</label><input class="input" id="nuevo-usuario-nombre" required></div>
+        <div class="field"><label>Correo</label><input type="email" class="input" id="nuevo-usuario-correo" required></div>
+        <div class="field"><label>Contraseña</label><input type="password" class="input" id="nuevo-usuario-clave" minlength="8" required></div>
+        <div class="field"><label>Rol</label>
+          <select class="select" id="nuevo-usuario-rol">
+            <option value="usuario" selected>Usuario</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+      </div>
+      ${ui.modalUsuarioError ? `<div class="login-error" style="display:block;margin-top:14px;">${esc(ui.modalUsuarioError)}</div>` : ''}
+      <div class="modal-foot">
+        <button type="submit" class="btn btn-primary" ${ui.modalUsuarioEnviando ? 'disabled' : ''}>${ui.modalUsuarioEnviando ? 'Creando…' : 'Crear usuario'}</button>
+      </div>
+    </form>
+  `;
+}
+async function enviarNuevoUsuario() {
+  const nombre = document.getElementById('nuevo-usuario-nombre').value.trim();
+  const correo = document.getElementById('nuevo-usuario-correo').value.trim();
+  const clave = document.getElementById('nuevo-usuario-clave').value;
+  const rol = document.getElementById('nuevo-usuario-rol').value;
+  ui.modalUsuarioEnviando = true;
+  ui.modalUsuarioError = null;
+  renderModalNuevoUsuario();
+  const { error } = await sb.functions.invoke('admin-crear-usuario', { body: { email: correo, password: clave, nombre, rol } });
+  ui.modalUsuarioEnviando = false;
+  if (error) {
+    let mensaje = 'No se pudo crear el usuario.';
+    try { const cuerpo = await error.context.json(); if (cuerpo && cuerpo.error) mensaje = cuerpo.error; } catch (e2) { /* respuesta no-JSON: se usa el mensaje genérico */ }
+    ui.modalUsuarioError = mensaje;
+    renderModalNuevoUsuario();
+    return;
+  }
+  cerrarModalNuevoUsuario();
+  await cargarUsuariosAdmin();
+}
+
+function renderVistaAdmin() {
+  const cont = document.getElementById('admin-contenido');
+  if (!cont) return;
+  cont.innerHTML = `
+    <div class="modo-toggle" style="max-width:600px;">
+      <button class="${ui.adminSubVista === 'usuarios' ? 'is-active' : ''}" data-action="admin-subvista" data-subvista="usuarios">Usuarios</button>
+      <button class="${ui.adminSubVista === 'backup' ? 'is-active' : ''}" data-action="admin-subvista" data-subvista="backup">Copia de seguridad</button>
+      <button class="${ui.adminSubVista === 'config' ? 'is-active' : ''}" data-action="admin-subvista" data-subvista="config">Ajustes</button>
+      <button class="${ui.adminSubVista === 'instrucciones' ? 'is-active' : ''}" data-action="admin-subvista" data-subvista="instrucciones">Instrucciones</button>
+    </div>
+    ${ui.adminSubVista === 'usuarios' ? renderAdminUsuarios()
+      : ui.adminSubVista === 'backup' ? renderAdminBackup()
+      : ui.adminSubVista === 'config' ? renderAdminConfig()
+      : renderAdminInstrucciones()}
+  `;
+}
+function renderAdminInstrucciones() {
+  return `
+    <div class="card" style="padding:24px 26px;max-width:760px;">
+      <h2 style="font-size:1rem;margin-bottom:8px;">Qué es este sistema</h2>
+      <p style="color:var(--ink-soft);margin-bottom:20px;">
+        Esta es la herramienta interna de Odetta Arquitectura para armar presupuestos, llevar el catálogo de materiales y mano de obra, y controlar los costos de personal por proyecto. Todo se guarda automáticamente en la nube — el indicador "Guardado ✓" en la parte superior confirma que tus cambios ya quedaron a salvo.
+      </p>
+      <h2 style="font-size:1rem;margin-bottom:8px;">Cómo funciona el acceso</h2>
+      <p style="color:var(--ink-soft);margin-bottom:20px;">
+        No hay registro abierto: solo un Admin puede crear cuentas nuevas, desde el engranaje ⚙ → <b>Usuarios</b>. Una vez adentro, todos los usuarios ven la misma información — los roles no ocultan datos entre sí, solo controlan quién puede administrar usuarios y la configuración general.
+      </p>
+      <h2 style="font-size:1rem;margin-bottom:8px;">Roles actuales</h2>
+      <p style="color:var(--ink-soft);margin-bottom:6px;"><b>Usuario</b> — acceso normal: clientes, presupuestos, catálogo y costos de personal.</p>
+      <p style="color:var(--ink-soft);margin-bottom:20px;"><b>Admin</b> — todo lo anterior, más crear usuarios y cambiarles el rol, descargar copias de seguridad manuales, y editar la configuración general de la empresa (AIU, IVA y margen por defecto).</p>
+      <h2 style="font-size:1rem;margin-bottom:8px;">¿Necesitas un rol nuevo o un permiso distinto?</h2>
+      <p style="color:var(--ink-soft);">
+        Los roles se pueden ampliar más adelante según lo necesite el equipo. Si hace falta uno nuevo, coméntaselo a quien administra el sistema.
+      </p>
+    </div>
+  `;
+}
+function renderAdminUsuarios() {
+  if (ui.adminCargandoUsuarios) return `<p style="color:var(--ink-faint);font-size:.9rem;">Cargando usuarios…</p>`;
+  return `
+    <div class="section-head">
+      <h2 style="margin:0;font-size:1rem;">Cuentas con acceso</h2>
+      <button class="btn btn-primary btn-sm" data-action="abrir-modal-nuevo-usuario">+ Nuevo usuario</button>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Nombre</th><th>Rol</th><th>Creado</th></tr></thead>
+      <tbody>${ui.adminUsuarios.map(u => `
+        <tr>
+          <td>
+            <input class="table-input" style="font-weight:600;min-width:140px;" data-nombre-usuario-id="${u.id}" value="${esc(u.nombre)}" placeholder="Sin nombre">
+            ${u.id === ui.usuarioActual.id ? '<span class="hint">(tú)</span>' : ''}
+          </td>
+          <td>
+            <select class="select" style="width:auto;" data-rol-usuario-id="${u.id}" ${u.id === ui.usuarioActual.id ? 'disabled title="No puedes cambiar tu propio rol desde aquí"' : ''}>
+              <option value="usuario" ${u.rol === 'usuario' ? 'selected' : ''}>Usuario</option>
+              <option value="admin" ${u.rol === 'admin' ? 'selected' : ''}>Admin</option>
+            </select>
+          </td>
+          <td class="mono">${formatFechaCorta((u.created_at || '').slice(0, 10))}</td>
+        </tr>`).join('')}</tbody>
+    </table></div>
+  `;
+}
+function renderAdminBackup() {
+  return `
+    <div class="card" style="padding:22px 24px;max-width:560px;">
+      <h2 style="font-size:1rem;margin-bottom:8px;">Copia de seguridad</h2>
+      <p style="color:var(--ink-soft);font-size:.88rem;margin-bottom:18px;">
+        Descarga toda la información actual (clientes, presupuestos, catálogo y costos de personal) en un archivo JSON, como respaldo aparte del que ya mantiene Supabase.
+      </p>
+      <button class="btn btn-primary" data-action="descargar-backup">⭳ Descargar copia de seguridad</button>
+    </div>
+  `;
+}
+function renderAdminConfig() {
+  const e = state.empresa;
+  return `
+    <div class="card" style="padding:22px 24px;max-width:620px;">
+      <h2 style="font-size:1rem;margin-bottom:4px;">Ajustes de empresa</h2>
+      <p style="color:var(--ink-faint);font-size:.82rem;margin-bottom:16px;">Próximo número de cotización: <b class="mono">COT-${String(e.consecutivoPresupuesto).padStart(4, '0')}</b> (se asigna solo, no es editable aquí).</p>
+      <div class="field-grid">
+        ${campoPorcentaje('empresaAiu', '1', 'administracion', 'Administración (A.I.U.) %', e.aiuDefecto.administracion)}
+        ${campoPorcentaje('empresaAiu', '1', 'imprevistos', 'Imprevistos (A.I.U.) %', e.aiuDefecto.imprevistos)}
+        ${campoPorcentaje('empresaAiu', '1', 'utilidad', 'Utilidad (A.I.U.) %', e.aiuDefecto.utilidad)}
+        ${campoPorcentaje('empresa', '1', 'ivaSobreUtilidadDefecto', 'IVA sobre utilidad %', e.ivaSobreUtilidadDefecto)}
+        ${campoNumero('empresa', '1', 'factorMargenDefecto', 'Factor de margen por defecto', e.factorMargenDefecto)}
+      </div>
+      <div class="field" style="margin-top:14px;">
+        <label>Forma de pago por defecto</label>
+        <input class="input" data-entidad="empresa" data-id="1" data-campo="formaPagoDefecto" value="${esc(e.formaPagoDefecto)}">
+      </div>
+    </div>
+  `;
+}
+
+/* ============================================================
    17. DELEGACIÓN DE EVENTOS
    ============================================================ */
 document.body.addEventListener('click', e => {
@@ -2407,7 +2658,7 @@ document.body.addEventListener('click', e => {
     'item-catalogo-filtro': () => alternarCatalogoFiltroItem(id, btn.dataset.filtro),
     'abrir-modal-item': () => abrirModalItem(id),
     'cerrar-modal': () => cerrarModalItem(),
-    'cerrar-modal-overlay': () => { if (e.target.id === 'modal-overlay') { if (ui.modalPersonalId) cerrarModalPersonal(); else cerrarModalItem(); } },
+    'cerrar-modal-overlay': () => { if (e.target.id === 'modal-overlay') { if (ui.modalUsuarioAbierto) cerrarModalNuevoUsuario(); else if (ui.modalPersonalId) cerrarModalPersonal(); else cerrarModalItem(); } },
     'modo-directo': () => cambiarModoPrecio(id, 'directo'),
     'modo-apu': () => cambiarModoPrecio(id, 'apu'),
     'crear-recurso': () => crearRecurso(id),
@@ -2441,7 +2692,15 @@ document.body.addEventListener('click', e => {
     'crear-anticipo-personal': () => crearAnticipoPersonal(),
     'eliminar-anticipo-personal': () => eliminarAnticipoPersonal(id),
     'elegir-combobox': () => elegirOpcionCombobox(btn.dataset.nombre),
-    'cerrar-sesion': () => cerrarSesion()
+    'cerrar-sesion': () => cerrarSesion(),
+    'admin-subvista': () => {
+      ui.adminSubVista = btn.dataset.subvista;
+      renderVistaAdmin();
+      if (ui.adminSubVista === 'usuarios') cargarUsuariosAdmin();
+    },
+    'abrir-modal-nuevo-usuario': () => abrirModalNuevoUsuario(),
+    'cerrar-modal-usuario': () => cerrarModalNuevoUsuario(),
+    'descargar-backup': () => descargarCopiaSeguridad()
   };
   if (acciones[accion]) { acciones[accion](); }
 });
@@ -2469,6 +2728,7 @@ document.body.addEventListener('input', e => {
     return;
   }
   if (entidad === 'cliente') { guardarDebounced(); return; }
+  if (entidad === 'empresa' || entidad === 'empresaAiu') { guardarDebounced(); return; }
   if (entidad === 'registroPersonal') {
     if (campo === 'retencionPorcentaje') { recalcularRegistroPersonalActivo(); refrescarModalPersonal(); }
     guardarDebounced();
@@ -2518,6 +2778,11 @@ document.body.addEventListener('change', e => {
     return;
   }
 
+  if (el.dataset.rolUsuarioId) {
+    cambiarRolUsuario(el.dataset.rolUsuarioId, el.value);
+    return;
+  }
+
   if (el.tagName === 'SELECT') {
     const entidad = el.dataset.entidad, campo = el.dataset.campo, id = el.dataset.id;
     if (!entidad || !campo) return;
@@ -2528,6 +2793,10 @@ document.body.addEventListener('change', e => {
     else if (entidad === 'catalogo') renderCatalogo();
     return;
   }
+});
+
+document.body.addEventListener('submit', e => {
+  if (e.target.id === 'form-nuevo-usuario') { e.preventDefault(); enviarNuevoUsuario(); }
 });
 
 // Piso del 5% para la utilidad del A.I.U.: se valida al salir del campo (focusout, que sí burbujea,
@@ -2547,6 +2816,9 @@ document.body.addEventListener('focusout', e => {
   // ("33.500"), mientras que mientras se edita se ve el número crudo (ver el focusin de abajo).
   if (el.dataset.formatoCop !== undefined) el.value = formatNum(leerCampoCOP(el));
   if (el === _comboboxInputActivo) cerrarCombobox();
+  // Nombre de usuario (panel de Configuraciones): se guarda al salir del campo, no en cada tecla
+  // — a diferencia del resto de campos de la app, este sí dispara una llamada de red por cambio.
+  if (el.dataset.nombreUsuarioId) guardarNombreUsuario(el.dataset.nombreUsuarioId, el.value.trim());
 });
 
 // Combobox de catálogo: se abre al enfocar el campo, se cierra al salir. Un click dentro del panel
@@ -2590,13 +2862,26 @@ function mostrarPantallaLogin(mensajeError) {
   if (campoCorreo) campoCorreo.focus();
 }
 
-function renderHeaderUsuario() {
-  const cont = document.getElementById('header-usuario');
+function iniciales(nombre) {
+  const partes = String(nombre || '').trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) return '?';
+  if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
+  return (partes[0][0] + partes[1][0]).toUpperCase();
+}
+function renderSidebarUsuario() {
+  const cont = document.getElementById('sidebar-usuario');
   if (!cont || !ui.usuarioActual) return;
+  document.body.classList.toggle('es-admin', ui.usuarioActual.rol === 'admin');
   cont.innerHTML = `
-    <span class="nombre">${esc(ui.usuarioActual.nombre)}</span>
-    <span class="badge-rol">${esc(ui.usuarioActual.rol)}</span>
-    <button type="button" data-action="cerrar-sesion">Salir</button>
+    <div class="avatar-mini">${esc(iniciales(ui.usuarioActual.nombre))}</div>
+    <div class="info">
+      <span class="nombre">${esc(ui.usuarioActual.nombre)}</span>
+      <span class="rol">${esc(ui.usuarioActual.rol)}</span>
+    </div>
+    <div class="acciones">
+      <button type="button" class="solo-admin" data-action="ir-vista" data-vista="admin" title="Configuraciones">⚙</button>
+      <button type="button" data-action="cerrar-sesion" title="Cerrar sesión">🚪</button>
+    </div>
   `;
 }
 
@@ -2623,7 +2908,7 @@ async function continuarConSesion(session) {
     if (cargando) cargando.textContent = 'No se pudo cargar la información. Revisa tu conexión y recarga la página.';
     return;
   }
-  renderHeaderUsuario();
+  renderSidebarUsuario();
   document.body.classList.remove('mostrando-login');
   document.body.classList.add('mostrando-app');
   restaurarUltimaVista();
