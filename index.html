@@ -338,10 +338,12 @@ body.mostrando-app #contenedor-app{ display:contents; }
   display:flex; align-items:center; gap:8px; margin-top:auto; padding-top:14px;
   border-top:1px solid rgba(43,51,40,.15); position:relative; z-index:1;
 }
-.sidebar-usuario .avatar-mini{
+.avatar-mini{
   width:34px; height:34px; border-radius:50%; background:var(--accent-strong); color:#fff;
   display:flex; align-items:center; justify-content:center; font-size:.76rem; font-weight:700; flex-shrink:0;
 }
+.avatar-mini-lg{ width:72px; height:72px; font-size:1.3rem; }
+.field-avatar-editor{ display:flex; align-items:center; gap:14px; margin-bottom:18px; }
 .sidebar-usuario .info{ flex:1; min-width:0; display:flex; flex-direction:column; }
 .sidebar-usuario .info .nombre{ font-size:.82rem; font-weight:600; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .sidebar-usuario .info .rol{ font-size:.68rem; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.04em; }
@@ -603,7 +605,10 @@ const ui = {
   adminCargandoUsuarios: false,
   modalUsuarioAbierto: false,
   modalUsuarioError: null,
-  modalUsuarioEnviando: false
+  modalUsuarioEnviando: false,
+  modalEditarUsuarioId: null,
+  modalEditarUsuarioError: null,
+  modalEditarUsuarioEnviando: false
 };
 
 /* ============================================================
@@ -2418,47 +2423,144 @@ function elegirOpcionCombobox(nombre) {
 async function cargarUsuariosAdmin() {
   ui.adminCargandoUsuarios = true;
   if (ui.vista === 'admin') renderVistaAdmin();
-  const { data, error } = await sb.from('profiles').select('id, nombre, email, rol, created_at').order('created_at');
+  const { data, error } = await sb.from('profiles').select('id, nombre, email, cargo, avatar_url, rol, created_at').order('created_at');
   ui.adminUsuarios = error ? [] : (data || []);
   ui.adminCargandoUsuarios = false;
   if (ui.vista === 'admin') renderVistaAdmin();
 }
 
-async function cambiarRolUsuario(id, nuevoRol) {
-  const usuario = ui.adminUsuarios.find(u => u.id === id);
-  const rolAnterior = usuario ? usuario.rol : null;
-  if (usuario) usuario.rol = nuevoRol; // optimista, se revierte abajo si falla
-  renderVistaAdmin();
-  const { error } = await sb.from('profiles').update({ rol: nuevoRol }).eq('id', id);
-  if (error) {
-    if (usuario) usuario.rol = rolAnterior;
+// Achica cualquier foto a un máximo de maxDim px de lado (una foto de celular puede pesar varios
+// MB, y esa misma imagen se descarga entera cada vez que la tabla de Usuarios se vuelve a pintar
+// — sin esto, la lista se pondría lenta apenas alguien subiera un par de fotos).
+function redimensionarImagen(file, maxDim) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const escala = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.round(img.width * escala), h = Math.round(img.height * escala);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('No se pudo procesar la imagen')), 'image/jpeg', 0.85);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('No se pudo leer la imagen')); };
+    img.src = url;
+  });
+}
+async function subirAvatarUsuario(id, file) {
+  if (!file) return;
+  if (!file.type.startsWith('image/')) { alert('Elige un archivo de imagen.'); return; }
+  try {
+    const blob = await redimensionarImagen(file, 300);
+    const ruta = `${id}.jpg`;
+    const { error: errSubir } = await sb.storage.from('avatars').upload(ruta, blob, { upsert: true, contentType: 'image/jpeg' });
+    if (errSubir) { alert('No se pudo subir la foto: ' + errSubir.message); return; }
+    const { data } = sb.storage.from('avatars').getPublicUrl(ruta);
+    // Cache-bust: la misma ruta se sobreescribe en cada cambio de foto, así que sin esto el
+    // navegador podría seguir mostrando la imagen anterior desde su propio caché.
+    const url = data.publicUrl + '?t=' + Date.now();
+    const { error: errPerfil } = await sb.from('profiles').update({ avatar_url: url }).eq('id', id);
+    if (errPerfil) { alert('La foto se subió pero no se pudo guardar en el perfil: ' + errPerfil.message); return; }
+    const usuario = ui.adminUsuarios.find(u => u.id === id);
+    if (usuario) usuario.avatar_url = url;
+    if (ui.modalEditarUsuarioId === id) renderModalEditarUsuario();
+    if (ui.usuarioActual && ui.usuarioActual.id === id) {
+      ui.usuarioActual.avatar_url = url;
+      renderSidebarUsuario();
+    }
     renderVistaAdmin();
-    alert('No se pudo cambiar el rol: ' + error.message);
+  } catch (e) {
+    alert('No se pudo procesar la imagen: ' + (e && e.message ? e.message : e));
   }
 }
 
-async function guardarNombreUsuario(id, nombre) {
+function abrirModalEditarUsuario(id) {
+  ui.modalEditarUsuarioId = id;
+  ui.modalEditarUsuarioError = null;
+  renderModalEditarUsuario();
+  document.getElementById('modal-overlay').classList.add('is-open');
+}
+function cerrarModalEditarUsuario() {
+  ui.modalEditarUsuarioId = null;
+  document.getElementById('modal-overlay').classList.remove('is-open');
+}
+function renderModalEditarUsuario() {
+  const u = ui.adminUsuarios.find(x => x.id === ui.modalEditarUsuarioId);
+  if (!u) { cerrarModalEditarUsuario(); return; }
+  const esUnoMismo = u.id === ui.usuarioActual.id;
+  const modal = document.getElementById('modal-content');
+  modal.innerHTML = `
+    <div class="modal-head">
+      <h3>Editar usuario</h3>
+      <button class="btn btn-icon btn-ghost" data-action="cerrar-modal-editar-usuario">✕</button>
+    </div>
+    <div class="field-avatar-editor">
+      <div class="avatar-mini avatar-mini-lg" style="overflow:hidden;cursor:pointer;" data-action="elegir-avatar" title="Cambiar foto">
+        ${u.avatar_url ? `<img src="${esc(u.avatar_url)}" style="width:100%;height:100%;object-fit:cover;">` : esc(iniciales(u.nombre))}
+      </div>
+      <div>
+        <button type="button" class="btn btn-sm" data-action="elegir-avatar">Cambiar foto</button>
+        <input type="file" id="editar-usuario-avatar-input" accept="image/*" style="display:none">
+      </div>
+    </div>
+    <form id="form-editar-usuario">
+      <div class="field-grid">
+        <div class="field"><label>Nombre</label><input class="input" id="editar-usuario-nombre" value="${esc(u.nombre)}"></div>
+        <div class="field"><label>Cargo</label><input class="input" id="editar-usuario-cargo" value="${esc(u.cargo)}"></div>
+        <div class="field"><label>Correo</label><input class="input" value="${esc(u.email)}" disabled title="El correo no se cambia desde aquí"></div>
+        <div class="field"><label>Rol</label>
+          <select class="select" id="editar-usuario-rol" ${esUnoMismo ? 'disabled title="No puedes cambiar tu propio rol desde aquí"' : ''}>
+            <option value="usuario" ${u.rol === 'usuario' ? 'selected' : ''}>Usuario</option>
+            <option value="admin" ${u.rol === 'admin' ? 'selected' : ''}>Admin</option>
+          </select>
+        </div>
+      </div>
+      ${ui.modalEditarUsuarioError ? `<div class="login-error" style="display:block;margin-top:14px;">${esc(ui.modalEditarUsuarioError)}</div>` : ''}
+      <div class="modal-foot">
+        <button type="submit" class="btn btn-primary" ${ui.modalEditarUsuarioEnviando ? 'disabled' : ''}>${ui.modalEditarUsuarioEnviando ? 'Guardando…' : 'Guardar'}</button>
+      </div>
+    </form>
+  `;
+}
+async function guardarEdicionUsuario() {
+  const id = ui.modalEditarUsuarioId;
   const usuario = ui.adminUsuarios.find(u => u.id === id);
-  if (!usuario || usuario.nombre === nombre) return; // sin cambios reales
-  const anterior = usuario.nombre;
-  usuario.nombre = nombre; // optimista
-  const { error: errPerfil } = await sb.from('profiles').update({ nombre }).eq('id', id);
-  if (errPerfil) {
-    usuario.nombre = anterior;
-    renderVistaAdmin();
-    alert('No se pudo guardar el nombre: ' + errPerfil.message);
+  if (!usuario) return;
+  const nombre = document.getElementById('editar-usuario-nombre').value.trim();
+  const cargo = document.getElementById('editar-usuario-cargo').value.trim();
+  const rolEl = document.getElementById('editar-usuario-rol');
+  const rol = rolEl.disabled ? usuario.rol : rolEl.value;
+
+  ui.modalEditarUsuarioEnviando = true;
+  ui.modalEditarUsuarioError = null;
+  renderModalEditarUsuario();
+
+  const { error } = await sb.from('profiles').update({ nombre, cargo, rol }).eq('id', id);
+  ui.modalEditarUsuarioEnviando = false;
+  if (error) {
+    ui.modalEditarUsuarioError = 'No se pudo guardar: ' + error.message;
+    renderModalEditarUsuario();
     return;
   }
+  usuario.nombre = nombre;
+  usuario.cargo = cargo;
+  usuario.rol = rol;
+
   // El nombre para la app ya quedó guardado en profiles (arriba). Además se refleja en el
-  // "Display name" que Supabase muestra en su propio Dashboard (Authentication > Users) —
-  // eso vive en auth.users, que solo la clave service_role puede tocar, por eso pasa por
-  // esta Edge Function en vez de un update directo desde aquí.
+  // "Display name" que Supabase muestra en su propio Dashboard (Authentication > Users) — eso
+  // vive en auth.users, que solo la clave service_role puede tocar, por eso pasa por esta Edge
+  // Function en vez de un update directo desde aquí.
   const { error: errAuth } = await sb.functions.invoke('admin-actualizar-usuario', { body: { id, nombre } });
   if (errAuth) console.error('El nombre quedó guardado en la app, pero no se pudo sincronizar con Supabase Auth:', errAuth);
+
   if (ui.usuarioActual && ui.usuarioActual.id === id) {
     ui.usuarioActual.nombre = nombre;
     renderSidebarUsuario();
   }
+  cerrarModalEditarUsuario();
+  renderVistaAdmin();
 }
 
 function descargarCopiaSeguridad() {
@@ -2491,11 +2593,12 @@ function renderModalNuevoUsuario() {
       <h3>Nuevo usuario</h3>
       <button class="btn btn-icon btn-ghost" data-action="cerrar-modal-usuario">✕</button>
     </div>
-    <form id="form-nuevo-usuario">
+    <form id="form-nuevo-usuario" autocomplete="off">
       <div class="field-grid">
-        <div class="field"><label>Nombre</label><input class="input" id="nuevo-usuario-nombre" required></div>
-        <div class="field"><label>Correo</label><input type="email" class="input" id="nuevo-usuario-correo" required></div>
-        <div class="field"><label>Contraseña</label><input type="password" class="input" id="nuevo-usuario-clave" minlength="8" required></div>
+        <div class="field"><label>Nombre</label><input class="input" id="nuevo-usuario-nombre" autocomplete="off" required></div>
+        <div class="field"><label>Cargo</label><input class="input" id="nuevo-usuario-cargo" autocomplete="off"></div>
+        <div class="field"><label>Correo</label><input type="email" class="input" id="nuevo-usuario-correo" autocomplete="off" required></div>
+        <div class="field"><label>Contraseña</label><input type="password" class="input" id="nuevo-usuario-clave" autocomplete="new-password" minlength="8" required></div>
         <div class="field"><label>Rol</label>
           <select class="select" id="nuevo-usuario-rol">
             <option value="usuario" selected>Usuario</option>
@@ -2512,13 +2615,14 @@ function renderModalNuevoUsuario() {
 }
 async function enviarNuevoUsuario() {
   const nombre = document.getElementById('nuevo-usuario-nombre').value.trim();
+  const cargo = document.getElementById('nuevo-usuario-cargo').value.trim();
   const correo = document.getElementById('nuevo-usuario-correo').value.trim();
   const clave = document.getElementById('nuevo-usuario-clave').value;
   const rol = document.getElementById('nuevo-usuario-rol').value;
   ui.modalUsuarioEnviando = true;
   ui.modalUsuarioError = null;
   renderModalNuevoUsuario();
-  const { error } = await sb.functions.invoke('admin-crear-usuario', { body: { email: correo, password: clave, nombre, rol } });
+  const { error } = await sb.functions.invoke('admin-crear-usuario', { body: { email: correo, password: clave, nombre, rol, cargo } });
   ui.modalUsuarioEnviando = false;
   if (error) {
     let mensaje = 'No se pudo crear el usuario.';
@@ -2576,21 +2680,16 @@ function renderAdminUsuarios() {
       <button class="btn btn-primary btn-sm" data-action="abrir-modal-nuevo-usuario">+ Nuevo usuario</button>
     </div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Creado</th></tr></thead>
+      <thead><tr><th></th><th>Nombre</th><th>Correo</th><th>Cargo</th><th>Rol</th><th>Creado</th><th></th></tr></thead>
       <tbody>${ui.adminUsuarios.map(u => `
         <tr>
-          <td>
-            <input class="table-input" style="font-weight:600;min-width:140px;" data-nombre-usuario-id="${u.id}" value="${esc(u.nombre)}" placeholder="Sin nombre">
-            ${u.id === ui.usuarioActual.id ? '<span class="hint">(tú)</span>' : ''}
-          </td>
+          <td><div class="avatar-mini" style="overflow:hidden;">${u.avatar_url ? `<img src="${esc(u.avatar_url)}" style="width:100%;height:100%;object-fit:cover;">` : esc(iniciales(u.nombre))}</div></td>
+          <td><b>${esc(u.nombre) || 'Sin nombre'}</b>${u.id === ui.usuarioActual.id ? ' <span class="hint">(tú)</span>' : ''}</td>
           <td class="mono">${esc(u.email) || '—'}</td>
-          <td>
-            <select class="select" style="width:auto;" data-rol-usuario-id="${u.id}" ${u.id === ui.usuarioActual.id ? 'disabled title="No puedes cambiar tu propio rol desde aquí"' : ''}>
-              <option value="usuario" ${u.rol === 'usuario' ? 'selected' : ''}>Usuario</option>
-              <option value="admin" ${u.rol === 'admin' ? 'selected' : ''}>Admin</option>
-            </select>
-          </td>
+          <td>${esc(u.cargo) || '—'}</td>
+          <td><span class="badge badge-${u.rol === 'admin' ? 'aprobado' : 'borrador'}">${esc(u.rol)}</span></td>
           <td class="mono">${formatFechaCorta((u.created_at || '').slice(0, 10))}</td>
+          <td><button class="btn btn-sm" data-action="abrir-modal-editar-usuario" data-id="${u.id}">Editar</button></td>
         </tr>`).join('')}</tbody>
     </table></div>
   `;
@@ -2659,7 +2758,7 @@ document.body.addEventListener('click', e => {
     'item-catalogo-filtro': () => alternarCatalogoFiltroItem(id, btn.dataset.filtro),
     'abrir-modal-item': () => abrirModalItem(id),
     'cerrar-modal': () => cerrarModalItem(),
-    'cerrar-modal-overlay': () => { if (e.target.id === 'modal-overlay') { if (ui.modalUsuarioAbierto) cerrarModalNuevoUsuario(); else if (ui.modalPersonalId) cerrarModalPersonal(); else cerrarModalItem(); } },
+    'cerrar-modal-overlay': () => { if (e.target.id === 'modal-overlay') { if (ui.modalUsuarioAbierto) cerrarModalNuevoUsuario(); else if (ui.modalEditarUsuarioId) cerrarModalEditarUsuario(); else if (ui.modalPersonalId) cerrarModalPersonal(); else cerrarModalItem(); } },
     'modo-directo': () => cambiarModoPrecio(id, 'directo'),
     'modo-apu': () => cambiarModoPrecio(id, 'apu'),
     'crear-recurso': () => crearRecurso(id),
@@ -2701,6 +2800,9 @@ document.body.addEventListener('click', e => {
     },
     'abrir-modal-nuevo-usuario': () => abrirModalNuevoUsuario(),
     'cerrar-modal-usuario': () => cerrarModalNuevoUsuario(),
+    'abrir-modal-editar-usuario': () => abrirModalEditarUsuario(id),
+    'cerrar-modal-editar-usuario': () => cerrarModalEditarUsuario(),
+    'elegir-avatar': () => document.getElementById('editar-usuario-avatar-input').click(),
     'descargar-backup': () => descargarCopiaSeguridad()
   };
   if (acciones[accion]) { acciones[accion](); }
@@ -2779,8 +2881,9 @@ document.body.addEventListener('change', e => {
     return;
   }
 
-  if (el.dataset.rolUsuarioId) {
-    cambiarRolUsuario(el.dataset.rolUsuarioId, el.value);
+  if (el.id === 'editar-usuario-avatar-input') {
+    const archivo = el.files && el.files[0];
+    if (archivo) subirAvatarUsuario(ui.modalEditarUsuarioId, archivo);
     return;
   }
 
@@ -2798,6 +2901,7 @@ document.body.addEventListener('change', e => {
 
 document.body.addEventListener('submit', e => {
   if (e.target.id === 'form-nuevo-usuario') { e.preventDefault(); enviarNuevoUsuario(); }
+  if (e.target.id === 'form-editar-usuario') { e.preventDefault(); guardarEdicionUsuario(); }
 });
 
 // Piso del 5% para la utilidad del A.I.U.: se valida al salir del campo (focusout, que sí burbujea,
@@ -2817,9 +2921,6 @@ document.body.addEventListener('focusout', e => {
   // ("33.500"), mientras que mientras se edita se ve el número crudo (ver el focusin de abajo).
   if (el.dataset.formatoCop !== undefined) el.value = formatNum(leerCampoCOP(el));
   if (el === _comboboxInputActivo) cerrarCombobox();
-  // Nombre de usuario (panel de Configuraciones): se guarda al salir del campo, no en cada tecla
-  // — a diferencia del resto de campos de la app, este sí dispara una llamada de red por cambio.
-  if (el.dataset.nombreUsuarioId) guardarNombreUsuario(el.dataset.nombreUsuarioId, el.value.trim());
 });
 
 // Combobox de catálogo: se abre al enfocar el campo, se cierra al salir. Un click dentro del panel
@@ -2874,7 +2975,7 @@ function renderSidebarUsuario() {
   if (!cont || !ui.usuarioActual) return;
   document.body.classList.toggle('es-admin', ui.usuarioActual.rol === 'admin');
   cont.innerHTML = `
-    <div class="avatar-mini">${esc(iniciales(ui.usuarioActual.nombre))}</div>
+    <div class="avatar-mini" style="overflow:hidden;">${ui.usuarioActual.avatar_url ? `<img src="${esc(ui.usuarioActual.avatar_url)}" style="width:100%;height:100%;object-fit:cover;">` : esc(iniciales(ui.usuarioActual.nombre))}</div>
     <div class="info">
       <span class="nombre">${esc(ui.usuarioActual.nombre)}</span>
       <span class="rol">${esc(ui.usuarioActual.rol)}</span>
@@ -2894,12 +2995,12 @@ async function cerrarSesion() {
 // Ya con sesión válida (recién iniciada, o ya existente al recargar la página): trae el perfil
 // (para saber el rol), carga los datos reales desde Supabase, y recién ahí muestra la app.
 async function continuarConSesion(session) {
-  const { data: perfil, error } = await sb.from('profiles').select('nombre, rol').eq('id', session.user.id).maybeSingle();
+  const { data: perfil, error } = await sb.from('profiles').select('nombre, rol, avatar_url').eq('id', session.user.id).maybeSingle();
   if (error || !perfil) {
     mostrarPantallaLogin('No se pudo cargar tu perfil. Contacta a un administrador.');
     return;
   }
-  ui.usuarioActual = { id: session.user.id, email: session.user.email, nombre: perfil.nombre || session.user.email, rol: perfil.rol };
+  ui.usuarioActual = { id: session.user.id, email: session.user.email, nombre: perfil.nombre || session.user.email, rol: perfil.rol, avatar_url: perfil.avatar_url || null };
   try {
     await cargar();
   } catch (e) {
