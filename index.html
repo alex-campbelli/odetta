@@ -1,0 +1,2665 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odetta — Presupuestos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   1. TOKENS
+   ============================================================ */
+:root{
+  --ground:#FAFAF7;
+  --surface:#FFFFFF;
+  --surface-2:#F3F6F1;
+  --surface-3:#EAF2E8;
+  --ink:#2B3328;
+  --ink-soft:#606B5C;
+  --ink-faint:#818C79;
+  --accent:#6C7A49;
+  --accent-strong:#596F3C;
+  --accent-ink:#4A5A2F;
+  --accent-soft:#E7E9DA;
+  --teal:#256868;
+  --teal-soft:#E1F5F5;
+  --lavender:#8778C3;
+  --lavender-soft:#F1EEFA;
+  --amber:#96690E;
+  --amber-soft:#FCF3E2;
+  --coral:#A94B36;
+  --coral-soft:#FCEBE7;
+  --line:#E7EBE3;
+  --line-strong:#D5DCCF;
+  --sidebar-bg:#BFC6B0;
+  --shadow:0 2px 6px -2px rgba(89,111,60,.10), 0 12px 28px -14px rgba(89,111,60,.16);
+  --shadow-modal:0 30px 70px -24px rgba(43,51,40,.35);
+  --header-h:65px;
+  --sidebar-w:220px;
+}
+
+/* ============================================================
+   2. RESET / BASE
+   ============================================================ */
+*{ box-sizing:border-box; }
+html{ -webkit-text-size-adjust:100%; }
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:'Archivo', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size:15px; line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4{ font-family:'Fraunces', ui-serif, Georgia, serif; font-weight:600; color:var(--ink); margin:0; text-wrap:balance; }
+p{ margin:0; }
+button{ font-family:inherit; }
+.mono{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric:tabular-nums; }
+a{ color:var(--accent-ink); }
+::selection{ background:var(--accent-soft); color:var(--accent-ink); }
+input,select,textarea{ font-family:inherit; font-size:inherit; color:inherit; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible{
+  outline:2px solid var(--teal); outline-offset:1px;
+}
+.oculto{ display:none !important; }
+.solo-lectura-pill{
+  display:inline-flex; align-items:center; gap:6px; font-size:.72rem; text-transform:uppercase;
+  letter-spacing:.06em; color:var(--ink-faint); background:var(--surface-2); border:1px solid var(--line);
+  border-radius:999px; padding:3px 10px;
+}
+
+/* ============================================================
+   3. LAYOUT DE APP
+   ============================================================ */
+.app-header{
+  position:sticky; top:0; z-index:20; height:var(--header-h); box-sizing:border-box;
+  display:flex; align-items:center; gap:20px;
+  padding:0 24px; background:var(--surface);
+  border-bottom:1px solid var(--line); box-shadow:0 4px 16px -8px rgba(89,111,60,.14);
+}
+.app-brand{ display:flex; align-items:center; gap:10px; flex-shrink:0; }
+.app-brand img{ width:32px; height:32px; display:block; }
+.app-brand .word{ font-family:'Fraunces',serif; font-weight:600; font-size:1.04rem; line-height:1.1; color:var(--accent-strong); }
+.app-brand .word small{ display:block; font-family:'Archivo',sans-serif; font-weight:500; font-size:.66rem; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.08em; }
+.app-header-spacer{ flex:1; }
+.save-indicator{ display:flex; align-items:center; gap:7px; font-size:.78rem; color:var(--ink-faint); white-space:nowrap; background:var(--surface-2); padding:6px 12px; border-radius:999px; }
+.save-indicator .dot{ width:7px; height:7px; border-radius:50%; background:var(--accent); flex-shrink:0; box-shadow:0 0 0 3px var(--accent-soft); }
+.save-indicator.is-saving .dot{ background:var(--amber); box-shadow:0 0 0 3px var(--amber-soft); }
+
+.app-shell{ display:flex; align-items:flex-start; }
+.app-sidebar{
+  width:var(--sidebar-w); flex-shrink:0; box-sizing:border-box;
+  position:sticky; top:var(--header-h); height:calc(100vh - var(--header-h)); overflow-y:auto; overflow-x:hidden;
+  padding:20px 14px; background:var(--sidebar-bg); border-right:1px solid var(--line);
+}
+.sidebar-watermark{
+  position:absolute; left:-50px; bottom:60px; width:300px; height:300px;
+  opacity:.08; pointer-events:none; user-select:none;
+}
+.app-nav{ display:flex; flex-direction:column; gap:2px; position:relative; z-index:1; }
+.nav-tab{
+  display:block; width:100%; text-align:left; border:none; border-left:3px solid transparent;
+  background:transparent; color:var(--ink); font-size:.9rem; font-weight:600;
+  padding:10px 12px; border-radius:0 9px 9px 0; cursor:pointer; transition:background .15s ease, color .15s ease;
+}
+.nav-tab:hover{ background:var(--surface-2); color:var(--ink); }
+.nav-tab.is-active{ background:var(--accent-strong); color:#fff; border-left-color:transparent; border-radius:9px; }
+
+main{ flex:1; min-width:0; max-width:1020px; padding:32px 32px 90px; }
+[data-view]{ display:none; }
+[data-view].is-active{ display:block; }
+
+@media screen and (max-width:760px){
+  .app-shell{ flex-direction:column; }
+  .app-sidebar{ position:static; width:100%; height:auto; border-right:none; border-bottom:1px solid var(--line); padding:10px 14px; }
+  .app-nav{ flex-direction:row; }
+  .nav-tab{ border-left:none; border-bottom:3px solid transparent; border-radius:9px 9px 0 0; }
+  .nav-tab.is-active{ border-left-color:transparent; border-bottom-color:transparent; }
+  main{ max-width:none; padding:24px 18px 70px; }
+}
+
+.view-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:24px; flex-wrap:wrap; }
+.view-head h1{ font-size:1.6rem; }
+.view-head .sub{ color:var(--ink-soft); font-size:.9rem; margin-top:4px; }
+
+.empty-state{
+  text-align:center; padding:64px 24px; border:1px solid var(--line); border-radius:18px;
+  color:var(--ink-soft); background:linear-gradient(180deg, var(--surface-2) 0%, var(--surface) 100%);
+}
+.empty-state h3{ font-size:1.15rem; margin-bottom:8px; color:var(--ink); }
+.empty-state p{ max-width:44ch; margin:0 auto 18px; font-size:.9rem; }
+
+/* ============================================================
+   4. COMPONENTES
+   ============================================================ */
+.btn{
+  display:inline-flex; align-items:center; gap:6px; border-radius:10px; border:1px solid var(--line-strong);
+  background:var(--surface); color:var(--ink); font-size:.85rem; font-weight:600; padding:9px 15px;
+  cursor:pointer; white-space:nowrap; line-height:1.2; transition:transform .12s ease, box-shadow .12s ease, background .12s ease;
+}
+.btn:hover{ background:var(--surface-2); box-shadow:var(--shadow); transform:translateY(-1px); }
+.btn:active{ transform:translateY(0); }
+.btn-primary{ background:var(--accent-strong); border-color:var(--accent-strong); color:#fff; box-shadow:0 4px 14px -6px rgba(89,111,60,.55); }
+.btn-primary:hover{ background:var(--accent); border-color:var(--accent); box-shadow:0 6px 18px -6px rgba(89,111,60,.55); }
+.btn-ghost{ border-color:transparent; background:transparent; }
+.btn-ghost:hover{ background:var(--surface-2); box-shadow:none; }
+.btn-danger{ color:var(--coral); border-color:transparent; background:transparent; }
+.btn-danger:hover{ background:var(--coral-soft); box-shadow:none; }
+.btn-sm{ padding:5px 10px; font-size:.76rem; border-radius:8px; }
+.btn-icon{ padding:6px 9px; border-radius:8px; line-height:1; }
+.btn[disabled]{ opacity:.4; cursor:not-allowed; }
+
+.field{ display:flex; flex-direction:column; gap:5px; }
+.field label{ font-size:.72rem; font-weight:600; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-faint); }
+.field .hint{ font-size:.72rem; color:var(--ink-faint); font-weight:400; text-transform:none; letter-spacing:0; }
+.input, .select, .textarea{
+  border:1px solid var(--line-strong); background:var(--surface); color:var(--ink); border-radius:9px;
+  padding:9px 11px; font-size:.88rem; width:100%; transition:border-color .12s ease, box-shadow .12s ease;
+}
+.input:focus, .select:focus, .textarea:focus{ border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+.textarea{ resize:vertical; min-height:64px; font-family:inherit; }
+.field-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(190px,1fr)); gap:14px; }
+
+.card{ background:var(--surface); border:1px solid var(--line); border-radius:16px; box-shadow:var(--shadow); }
+
+.badge{ display:inline-flex; align-items:center; gap:5px; font-size:.72rem; font-weight:700; padding:4px 10px; border-radius:999px; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap; }
+.badge::before{ content:''; width:6px; height:6px; border-radius:50%; background:currentColor; }
+.badge-borrador{ background:var(--surface-3); color:var(--ink-soft); }
+.badge-enviado{ background:var(--lavender-soft); color:var(--lavender); }
+.badge-aprobado{ background:var(--accent-soft); color:var(--accent-strong); }
+.badge-rechazado{ background:var(--coral-soft); color:var(--coral); }
+
+.tag-apu{ display:inline-flex; font-size:.64rem; font-weight:700; background:var(--teal-soft); color:var(--teal); border-radius:6px; padding:2px 6px; letter-spacing:.03em; }
+
+.catalogo-mini-toggle{ display:flex; gap:3px; margin-top:3px; }
+.catalogo-mini-toggle button{
+  border:1px solid var(--line-strong); background:var(--surface-2); color:var(--ink-faint);
+  font-size:.64rem; font-weight:700; letter-spacing:.02em; padding:2px 6px; border-radius:6px; cursor:pointer;
+  transition:background .12s ease, color .12s ease, border-color .12s ease;
+}
+.catalogo-mini-toggle button:hover{ color:var(--ink); }
+.catalogo-mini-toggle button.is-active{ background:var(--accent-soft); color:var(--accent-strong); border-color:var(--accent-strong); }
+
+.item-trabajador-link{ display:flex; align-items:center; gap:4px; margin-top:3px; }
+.item-trabajador-link .hint{ font-size:.78rem; }
+.item-trabajador-link select{
+  border:1px solid var(--line-strong); background:var(--surface-2); color:var(--ink-faint);
+  font-size:.64rem; font-weight:600; padding:2px 4px; border-radius:6px; cursor:pointer; max-width:150px;
+}
+.item-trabajador-link select.is-active{ background:var(--accent-soft); color:var(--accent-strong); border-color:var(--accent-strong); }
+
+.table-wrap{ overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:var(--surface); }
+table{ border-collapse:collapse; width:100%; font-size:.86rem; }
+thead th{
+  text-align:left; font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+  color:var(--ink-faint); background:var(--surface-2); padding:9px 12px; border-bottom:1px solid var(--line); white-space:nowrap;
+}
+tbody td{ padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:middle; }
+tbody tr:last-child td{ border-bottom:none; }
+td.num{ text-align:right; font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; white-space:nowrap; }
+th.num{ text-align:right; }
+.table-input{ border:1px solid transparent; background:transparent; border-radius:7px; padding:6px 8px; width:100%; font-size:.86rem; color:var(--ink); }
+.table-input:hover{ border-color:var(--line); background:var(--surface-2); }
+.table-input:focus{ border-color:var(--accent); background:var(--surface); box-shadow:0 0 0 3px var(--accent-soft); }
+.w-num{ width:78px; text-align:right; font-family:'IBM Plex Mono',monospace; }
+.w-unidad{ width:64px; }
+.row-actions{ display:flex; gap:2px; justify-content:flex-end; white-space:nowrap; }
+
+/* toolbar / search */
+.toolbar{ display:flex; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+.search-input{ max-width:280px; }
+
+/* modal */
+.modal-overlay{
+  position:fixed; inset:0; background:rgba(43,51,40,.35); backdrop-filter:blur(2px); display:none;
+  align-items:flex-start; justify-content:center; padding:5vh 16px; z-index:100; overflow-y:auto;
+}
+.modal-overlay.is-open{ display:flex; }
+.modal{
+  background:var(--surface); border-radius:20px; box-shadow:var(--shadow-modal); width:100%; max-width:640px;
+  padding:24px 26px 22px; margin-bottom:5vh; border:1px solid var(--line); transition:max-width .15s ease;
+}
+.modal.modal-wide{ max-width:760px; }
+.modal-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:16px; }
+.modal-head h3{ font-size:1.1rem; max-width:46ch; color:var(--accent-strong); }
+.modal-subhead{ font-size:.72rem; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-faint); font-family:'Archivo',sans-serif; font-weight:700; margin-bottom:10px; }
+.modo-toggle{ display:flex; gap:6px; margin-bottom:16px; background:var(--surface-2); border-radius:11px; padding:4px; }
+.modo-toggle button{
+  flex:1; border:none; background:transparent; padding:8px 10px; border-radius:8px; font-size:.82rem; font-weight:600;
+  color:var(--ink-soft); cursor:pointer; transition:background .12s ease, color .12s ease;
+}
+.modo-toggle button.is-active{ background:var(--surface); color:var(--accent-strong); box-shadow:var(--shadow); }
+.apu-summary{ display:flex; flex-wrap:wrap; gap:14px; align-items:center; margin-top:16px; padding:14px 16px; background:var(--accent-soft); border-radius:12px; font-size:.86rem; }
+.apu-summary b{ font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; color:var(--accent-strong); }
+.modal-foot{ display:flex; justify-content:flex-end; margin-top:18px; }
+
+/* combobox de catálogo (reemplaza el <datalist> nativo del navegador) */
+.combobox-panel{
+  position:fixed; z-index:200; display:none; background:var(--surface); border:1px solid var(--line-strong);
+  border-radius:12px; box-shadow:var(--shadow-modal); max-height:240px; overflow-y:auto; padding:6px;
+}
+.combobox-opcion{ padding:8px 10px; border-radius:8px; font-size:.86rem; cursor:pointer; color:var(--ink); }
+.combobox-opcion:hover{ background:var(--surface-2); }
+.combobox-opcion mark{ background:var(--amber-soft); color:var(--amber); border-radius:4px; padding:0 2px; font-weight:600; }
+.combobox-vacio{ padding:10px; font-size:.82rem; color:var(--ink-faint); text-align:center; }
+
+/* editor de presupuesto */
+.editor-topbar{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:22px; }
+.editor-topbar .info{ flex:1; min-width:0; }
+.editor-topbar h1{ font-size:1.3rem; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.editor-section{ margin-bottom:30px; }
+.editor-section h2{ font-size:.78rem; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-faint); margin-bottom:12px; font-family:'Archivo',sans-serif; font-weight:700; }
+.section-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+.section-head h2{ margin-bottom:0; }
+
+.chapter{ border:1px solid var(--line); border-radius:16px; background:var(--surface); box-shadow:var(--shadow); margin-bottom:14px; overflow:hidden; }
+.chapter-head{ display:flex; align-items:center; gap:8px; padding:12px 14px; background:var(--surface-2); border-bottom:1px solid var(--line); }
+.chapter-toggle{ border:none; background:transparent; cursor:pointer; font-size:.8rem; color:var(--ink-faint); padding:4px 6px; }
+.chapter-code{ font-family:'IBM Plex Mono',monospace; color:var(--surface); background:var(--accent); border-radius:6px; padding:1px 7px; font-size:.78rem; font-weight:600; min-width:1.4em; text-align:center; }
+.chapter-name-input{ flex:1; min-width:120px; border:1px solid transparent; background:transparent; font-family:'Fraunces',serif; font-weight:600; font-size:1rem; padding:5px 8px; border-radius:7px; color:var(--ink); }
+.chapter-name-input:hover{ border-color:var(--line); }
+.chapter-name-input:focus{ border-color:var(--accent); background:var(--surface); box-shadow:0 0 0 3px var(--accent-soft); }
+.chapter-subtotal{ font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; font-size:.88rem; font-weight:600; color:var(--accent-strong); white-space:nowrap; }
+.chapter-body{ padding:12px 14px 14px; }
+.chapter-body.is-colapsado{ display:none; }
+.chapter-add-item{ margin-top:10px; }
+.price-btn{ border:1px solid var(--line-strong); background:var(--surface); border-radius:8px; padding:6px 10px; font-size:.83rem; cursor:pointer; display:inline-flex; align-items:center; gap:6px; font-family:'IBM Plex Mono',monospace; transition:border-color .12s ease; }
+.price-btn:hover{ border-color:var(--accent); background:var(--accent-soft); }
+
+.chapters-toolbar{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+
+.summary-panel{
+  position:sticky; bottom:16px; background:linear-gradient(135deg, var(--accent-soft) 0%, var(--surface) 65%);
+  border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow-modal); padding:18px 22px; margin-top:10px;
+}
+.summary-grid{ display:flex; flex-wrap:wrap; gap:24px; align-items:baseline; }
+.summary-item{ display:flex; flex-direction:column; gap:2px; }
+.summary-item .lbl{ font-size:.68rem; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-faint); }
+.summary-item .val{ font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; font-size:.92rem; }
+.summary-item.total{ margin-left:auto; }
+.summary-item.total .val{ font-size:1.4rem; font-weight:600; color:var(--accent-strong); font-family:'Fraunces',serif; }
+
+/* catálogo */
+.catalogo-grid-head{ display:grid; grid-template-columns:1fr; gap:10px; }
+
+/* vista cliente */
+.doc-sheet{ background:var(--surface); border:1px solid var(--line); border-radius:20px; box-shadow:var(--shadow); padding:40px 44px; max-width:900px; margin:0 auto; }
+.doc-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:24px; margin-bottom:22px; }
+.doc-head img{ width:64px; height:64px; }
+.doc-head .doc-title{ text-align:right; }
+.doc-brand-name{ font-family:'Fraunces',serif; font-weight:600; font-size:1.5rem; line-height:1.1; color:var(--accent-strong); }
+.doc-brand-sub{ font-family:'Archivo',sans-serif; font-weight:600; font-size:.86rem; color:var(--accent-ink); letter-spacing:.02em; margin-top:1px; }
+.doc-head .doc-title .cot{ font-family:'IBM Plex Mono',monospace; color:var(--accent-strong); font-size:.86rem; font-weight:600; }
+.doc-meta{ display:grid; grid-template-columns:1fr 1fr; gap:6px 24px; font-size:.87rem; margin-bottom:18px; padding:16px 18px; background:var(--surface-2); border-radius:14px; }
+.doc-meta .k{ color:var(--ink-faint); }
+.doc-intro{ font-size:.88rem; color:var(--ink-soft); margin-bottom:18px; }
+.doc-chapter-title{ background:var(--accent-soft); color:var(--accent-strong); font-weight:700; padding:8px 14px; font-size:.82rem; text-transform:uppercase; letter-spacing:.03em; margin-top:18px; border-radius:9px; }
+.doc-sheet table{ font-size:.83rem; }
+.doc-summary{ margin-top:20px; max-width:340px; margin-left:auto; background:var(--surface-2); border-radius:14px; padding:6px 16px; }
+.doc-summary .row{ display:flex; justify-content:space-between; padding:7px 0; font-size:.87rem; border-bottom:1px solid var(--line); }
+.doc-summary .row:last-of-type{ border-bottom:none; }
+.doc-summary .row.total{ border-bottom:none; border-top:2px solid var(--accent-strong); margin-top:4px; padding-top:11px; padding-bottom:11px; font-weight:700; font-size:1.1rem; color:var(--accent-strong); }
+.doc-conditions{ margin-top:28px; font-size:.83rem; color:var(--ink-soft); }
+.doc-conditions h4{ font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-faint); margin-bottom:6px; }
+.doc-conditions p{ margin-bottom:10px; }
+.doc-sign{ margin-top:28px; font-size:.85rem; color:var(--ink-soft); border-top:1px solid var(--line); padding-top:16px; }
+.doc-sign b{ color:var(--ink); }
+.print-bar{ max-width:900px; margin:0 auto 16px; display:flex; justify-content:flex-end; gap:8px; }
+
+/* ============================================================
+   8B. LOGIN
+   ============================================================ */
+/* #contenedor-app envuelve el header + app-shell ya existentes sin tocar su propio CSS —
+   display:contents hace que este div no pinte caja propia y sus hijos se comporten como si
+   fueran hijos directos de body (con su display original intacto) en vez de heredar bloqueado
+   a block/flex por adivinar mal cuál era el original. */
+#pantalla-cargando{ display:flex; min-height:100vh; align-items:center; justify-content:center; color:var(--ink-faint); font-size:.9rem; background:var(--ground); }
+#pantalla-login{ display:none; min-height:100vh; align-items:center; justify-content:center; padding:24px; background:var(--ground); }
+#contenedor-app{ display:none; }
+body.mostrando-login #pantalla-cargando{ display:none; }
+body.mostrando-login #pantalla-login{ display:flex; }
+body.mostrando-app #pantalla-cargando{ display:none; }
+body.mostrando-app #contenedor-app{ display:contents; }
+.login-card{ width:100%; max-width:400px; background:var(--surface); border-radius:20px; box-shadow:var(--shadow-modal); padding:40px 36px 36px; text-align:center; }
+.login-brand{ display:flex; flex-direction:column; align-items:center; gap:10px; margin-bottom:28px; }
+.login-brand img{ width:56px; height:56px; }
+.login-brand .word{ font-family:'Fraunces',serif; font-weight:600; font-size:1.3rem; color:var(--accent-strong); line-height:1.1; }
+.login-brand .word small{ display:block; font-family:'Archivo',sans-serif; font-weight:500; font-size:.72rem; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.08em; margin-top:2px; }
+.login-card h1{ font-size:1.3rem; margin-bottom:6px; }
+.login-sub{ color:var(--ink-soft); font-size:.86rem; margin-bottom:26px; }
+.login-form{ display:flex; flex-direction:column; gap:16px; text-align:left; }
+.login-form .field label{ font-size:.78rem; font-weight:600; color:var(--ink-soft); margin-bottom:5px; display:block; }
+.login-error{ background:var(--coral-soft); color:var(--coral); font-size:.82rem; padding:10px 14px; border-radius:10px; text-align:left; }
+.login-submit{ width:100%; justify-content:center; margin-top:6px; padding:12px; font-size:.95rem; }
+.login-submit:disabled{ opacity:.6; cursor:default; }
+.header-usuario{ display:flex; align-items:center; gap:10px; margin-left:14px; padding-left:14px; border-left:1px solid var(--line); font-size:.82rem; color:var(--ink-soft); }
+.header-usuario .nombre{ font-weight:600; color:var(--ink); }
+.header-usuario .badge-rol{ font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; background:var(--accent-soft); color:var(--accent-strong); padding:2px 8px; border-radius:999px; }
+.header-usuario button{ background:none; border:none; color:var(--ink-faint); font-size:.8rem; cursor:pointer; text-decoration:underline; padding:0; }
+.header-usuario button:hover{ color:var(--coral); }
+
+/* ============================================================
+   9. IMPRESIÓN
+   ============================================================ */
+@media print{
+  @page{ size:portrait; margin:12mm; }
+  .no-imprimir{ display:none !important; }
+  body{ background:#fff; }
+  main{ padding:0; max-width:none; }
+  .doc-sheet{ box-shadow:none; border:none; border-radius:0; padding:0; max-width:none; }
+  .doc-sheet table{ font-size:.8rem; }
+  .doc-sheet thead th{ padding:5px 6px; white-space:normal; }
+  .doc-sheet tbody td{ padding:4px 6px; }
+  .doc-closing{ break-inside:avoid; }
+  .doc-closing-row{ display:flex; flex-direction:row-reverse; justify-content:space-between; align-items:flex-start; gap:28px; }
+  .doc-conditions{ margin-top:0; font-size:.74rem; flex:1; }
+  .doc-sign{ margin-top:0; padding-top:0; border-top:none; font-size:.76rem; flex:1; }
+  .doc-chapter-title{ break-after:avoid; }
+  .doc-sheet tr{ break-inside:avoid; }
+  thead{ display:table-header-group; }
+}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+</head>
+<body>
+
+<div id="pantalla-cargando">Cargando…</div>
+
+<div id="pantalla-login" class="no-imprimir">
+  <div class="login-card">
+    <div class="login-brand">
+      <img id="login-logo-placeholder" src="data:image/png;base64,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" alt="Odetta">
+      <div class="word">Odetta<small>Presupuestos</small></div>
+    </div>
+    <h1>Iniciar sesión</h1>
+    <p class="login-sub">Ingresa con tu cuenta de Odetta Arquitectura.</p>
+    <form id="form-login" class="login-form">
+      <div class="field">
+        <label for="login-correo">Correo</label>
+        <input type="email" class="input" id="login-correo" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="login-clave">Contraseña</label>
+        <input type="password" class="input" id="login-clave" autocomplete="current-password" required>
+      </div>
+      <div class="login-error" id="login-error" style="display:none;"></div>
+      <button type="submit" class="btn btn-primary login-submit" id="login-submit">Entrar</button>
+    </form>
+  </div>
+</div>
+
+<div id="contenedor-app">
+<header class="app-header no-imprimir">
+  <div class="app-brand">
+    <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAMAAABrrFhUAAAAYFBMVEUfGRyBjkokHiAjHSB0dyt5hUV7h0ZvcmNqk0t8iEdZAACqqlUhHB7//wAA/wAceBz///9//3//AACAikhzf0IAAAAiHB56hkYkHiAiHB4hHB0jHB4iGxwiGx0jHR49AAD9sXIuAAAAIHRSTlMY/uKpB2GhCB7RAgNZAQEDAQIBvVQA/v79j27OL0+vBLl1tewAABMLSURBVHja3V2JtqM6rtUBcjKeW3Xfa4htMPz/X7YhJIEgGQ8yVDU9rFo5GfBGlrYGS1DucXUdAPYydJvfCmy7bt73/UUAvH8GoGm0VkrKvG3Nf9u8/7/+yqVUWjevt3b/IwB0T/FutJJtXVeVsF1VVedSPWHo/nIAxvs3S2/fC6/s1/im+olC95dLwLB2l4UvYaiyXDV/hAQUp+L6M/77WBTHH9cvV23lvfQ5ClUmNewKwD/X6/jOor+ekBzXJB+0zKqIxU9AqB8YdHsAcDwOAnA4fH+fz+e7+d/39+Fw6v90tWGgZc2w+CkGt24HCeif9+nwfb5/mev+uIZ/nb8P5m8/J0ryGVf/xiCNPrAAYES/OHzfX0ufXl8Gg375iBQ0smJe/QuDPIEYkACc+uWbZ3+nrq/796HXiZ/LF0mWP2JQK9gIAPNoD2d69eNuOB8GQZmsv8qqlJcBV8IGALgs/3F9FxMh6EqVdv0PCNomNQCnsvi+u11f98NUEzTp5H+KQauTAnAtT26P/wGBEYL3NtAbANBDkN/SAXAqD3ef6+t8Kt+qUG6CQC8FTSIA/i0PX3fP6/BC4FK2YsXPmTgGYvGKBwQ8ugCW+u/be/09Aq9dAJmgtJfxdFupeqe/ARMX6P+jh9hAnj+dRT8IGCwCLOQ/ZP0zBHBFaBRXY7vdIVyQ137OkxCKGYAiQP4fiuCFQIcrQpEBEfebBsCguakHCs7USHMCcA1dv7lOb2soMTYganALnxgUVJ5VmRsIQsTtA5g//9M9+Doff36silC05i+ud2REoXUUhCxqH0wB+CmKs4X3Gq9o4hUifGCiCGvszjPpF0qDW+6EgTGJ4ITtGgC0AeidPxMHOAxxAcpBMmrgtQmgQmVAeUQ1Hu/UbeUEgWKQgIIgQGb1h1MxiY99Uzzx+HN8bgKNmwLtH9cBnVcOkdQWYgH4h9gAX0Pwo48FXk/XYoiFFbinZDbB0c6JhQi6zUZmDhCoSABOqAUYPN6ymHr9vfdXHAhL8PYKFIpAFfagjBisQWD8A4gBwLi1hKfz+4jFyjB/aSYCuFewbgzJO13VBkHfDVYKYPRaWRDhwiOmMQ/T+AhuDPNgi7UabAvZBm/MClyvF3TIaInAXARIBC4xENiFwFsXgoUDfx3KwhIyRq3maYoATgeEDEdgFYIn4/YGAFmNeZyFNWj++3i2sSEbHYi4mta6D4TQIQBgJPh8LAp71gT70K9/Zncr+BEo7RbBOAdBACx3wGEe8EVjZ8tNcJyLzY0iRHEQ1IJLEbwA+FyKEebT2ocR52GhN26MhGhy27lNFWQeiuClAxB19u/qp5e20+D2kTvGCZGIDWc1tn0gssYPgOVu/jBoVOoYAe5Y/t/8TVJwaOvlpSxCICrtBcBSBdhNoE0LnBYfbDNWSuhkD3pjcPEBYLGOovzlBMBhqQQ+dAcVH4lHwGwvixAoDwn4+QRguZVJW+jAnghC1EYQohHapo5FYHwKv85WQmO7zl/r1oMgRLKMvyy6UNw8zOA9SAUgSgDnjyCSIaAzESMD8NgBxyULOjr9fIEAgIW3dAJS/PKTYxAYASisTo0VgE/7cSYelKjSIND1hlYEI5AAgILS2AyuC7UNwhGgtgC7BFCESLAkeYFUBGsIb6MDbHSg4kGAUgTC2IJufytgucnQOKmTgK3L2BOAs18wxJMH2AlRxoOAohCwIkwwwbszE/SSHXyrcpBim3ck6hBf4Oi4A9Z9AQdC1HIgcCGNgS0Ou4U3OCNEBAIsIkAWqVnSsrHxgGUwvfiMBzgRIpkWAdoYApkVcIkInRwiQm66igsBghDQMbjImODp7G8/ZSpS/JABAgHK1ERFhbFPndZ1h6RIcZdSBojogy0vsHY2Bs0LuKhOnLWlRkBZdcBv/8zQz+9iLTPkR4iYKCG5CxobAFc8N3j1zQ0WTj4EgYBgQoAIQKF8C8jg3ojAT0R22JsQZVwy4B6CC68PKFbrA/wNNhcpNgi4BgkdKkSOR6xC5IhWiPw6ls4xjColAtoVX1ipEqVrhL7uEQJAEyImUkwEoJalCbBaJvnVn40y+BTF6XRyrxILRiCPzRZYv74JrRMErzpBN+dNJiXF6NeLugupFP3qK0UPPpWibleblBSXmK1dfPm8VvhorxX+cq0VjuZsPJTQhW2lqBaPR0CnU4SfOyzJeYFY/73P7rPIALbHPhgxrFf9eJ+Z8UOgSpctQL/9w9DynRkqyqC8FhEjE+li5XM+yHZqrOC110xuAeZ1zUUAEC/HXw/8J0z+rQjwkGKsSG2mY5Ff+Tfg5Og1Sk4znBJCIjIwEwHus8NB8fw2S+cW6BURADza73d6/JQmsxlVVW0zhVNogWof4dY/4Ms00jgWaVirzzEzX8cYUABgLgSOHSRO2wcy40VArvcQuT68XlsPkf8/fEQK2INYLAigWgAQAOAGHl1k7kMXmVPJ1XSMSGxyuAWYIVAIAEYXN3MKfh2CH3gfoVNZxil/xxgZQ7YAIRrvjDlMncclBT+NnaS++05S92cnqSOsdZJiJETxJTRgkyyYlFw+EPjA+2feS2zc8uyrtyQN4/Ml0mIJYc6ah4NnC5Erru9ucj/X4vRTprjIGFm0W4A63fABwLgFY4/j8/vvHAi0tBqEhZiI7LYbAHjKLL6ERtN74PXNbzvM1qGGNbfNDexTtcCrvmj2x1zvhABFiCS/GlQzAD7eITK1FwIiBSUEcg8AkVA2kHd7rJ+mhHEIZNQeAEJLsESmm4aREMXdEbYH9ASA5d+Bg9qFPTYKgVuEUDaUXgHcX7BWl3qAHoaA5I+Vd4gdyN8ANAg6XezhVhEquFRDtii3ICfIIOBCF+2DQS5eAX7/b+pa9kixJpQAEFQRuAq1wh4bRQnDEUAKp4YkLCRQAZfZGbGwm+anhMuHPHwZUCqAr3A/DAFmStghtmV4zICmT+JYx6e+CXtsFCUMfTYNrgUBNTsxBgcJ8oe1ziH6s4Y+HEwJ6BGAz/0WE4SBOuN6bEpUnHHSFtWCgMXMIlRNwxngV4xxUlQJyAcAS0cgkAZdiJ4p1R9BCTVqBgClQaFVSspymp+VEgJLcFhkDwBaLh1oa6ocqFc4KSGyO2EAoGbSge1KpzPgjBLy3F/TAwCYZASov3qt4V/GSQm9K2pRLah7ADAdyKb+KwZKWDERIo0C0HHowAvRIYKBEHV8UcIG+w4DgGQIhynHLshBjWO4EsdLLmjECLBQQcOp/pNSwi7ODDwAWBJhb/afUe3k01JC3ye1eNRGIgExAjWHpTLJFcbGMRxpU2yz4wC0HPXOvYLFDENglDCPRwBT97XxBSI9AaJjougpBhrUCAxttgyEaLnUGjAAfKwgsf6xn1/Dd0IUGCrpFrdjbgXQiLDzXUkrVV+ZtbB5Jd0y9FcZOY0IB1Hqf5LOV4KREsa2YkKCQkYCwkPiVPBjVs6g+JqGgIhsxYQIEQKAIw0g2e8n18HnbeR8lNBDnmoMgIUznHUx7Pdz/URQI2OkhO6mYHkrZt5PYFJEOsdsiQZSjJTQGU1kuyMAtBEF7qhGIqiiYjxcoUMzpGb2URUAABWnIW6EkxJG9aST2BYIcNop9U9yvIaxDLiN6MSESUBAXpBS/yS/IQp/AhPHmQgGQGI6wPvkLqX+rdZIi7gO2HYE3LhlhwLQYGGiAPWfrRzySkkJHUXJHYDOv3PjOreTyRBw54LSSQfYACDUv4PmpPR3GxInndU9emwkucyAIADc/GPfbjY955o4MlOqom7KcABKVAJ8w7OufcxrflLsN2NrAUDtpQMo9e/ayZ7qqBlBij1LMfMl7UfNIHixf3GLjR/qwDpU7+laCwnISmczSKp/L1ve4IQoqAj2VnnPX26XtN+VCJHqz9OO6YTtpYPKtxBnSPp0K/W24yphe2l/CTCZoaU7LN2bl4eEtlTSLmp+EaEhOZqtu8NU6jMs0yd3Q2C5VgPAZT0iRHbtzsMqqfJ0zZU9o8JDgUS+AgDdt12xHg+Mn7niXyYlAMsLzMPiJPuPKKflpIQxFRKiQgGYFTOR6i/qCA8nJYywwb2w46mxy6r6i7TcScbwObhQSyVmzw6T6i9rUhyOE0InBUAhFh+QlGn7cewlic3agxJKgRVLL23D81QtVfiXsVisHShhu7SCF0ASZg8tSBY+cllsmbS1sFNqsBlqhVu0dooc3cPW83NzSvgp60MaGK0TrIEu/BO3xP0S0iEA6Jkh/DRRLipu+ueeNGzLjWiAfByawo4Uisg5jnEIyI2s4HhuECrXy32SZ2TRh9wmHPI8Ols7Frqm0NBQbUcJF/z7CYBjpa9PAD66p6jaSAfiZ4aqajPt3CUdw2dlXg/KD2RrW88Ol9BNLrC96EgJgbuHB8IDRwBg/bBHKr1kqSMTkDoa0rwaKLQi+qwHqNkF2IvajxAxq1wkKfICYFUJrNO/PBOTK8sf6fj5i5knHWBVOovfyB5eP1jOJb33o/K0sWIEYK7ha29KCAnbFY49WcDS09RHIxMAuBYgEnXAbUq/Y9pKy3rk00kbRQJAU8JLogZVT60GtqP6HrooEgCKEGXJ5m3M2+kBeerPVRPFSkDCycy4knkG38B+7NdZD8UDQFVCqzQqMJu31NSxyU8GAKijYTqFCnwRO6Abr3rRPwYAqDoyhjjpkuy/mA04j2JILwHpJjMvVeBLtYOl05QqNwaASpnFkmKwyDaQtQN+0S8eABJNZkYbB3wC8PEmX4ecCQCKEkYhgNjAetlcff7LAeeSZxfmDLmdxWn428qi/XOWvcWnCsg/+iXnvyCxX25jmqznJWMvxcnjBWweS4jEwexCX407Gib50rBTWQQkc7ZFuc6GlLAWtq+CJVJC7rp8usm64hKAKbGAhQnae/3Wycw8AiCJwSqD6Am1//rJucQBx8y0sM2Y+ZgyY372j1g/SYj83QKsnS49a0z1yb/Ln4GA4EFAiZWdBNZe2Lfc9Qd1LifX2Jwe5OzFG8MgQk8DjfXVn89dBXtvYOdqcJewuE97no44numJgFz18WClP4SrTYgLi6eazNyIVQRhrTuco1bkcoZYJzNDve7kw5pb5qh3UgAQPZkZfMfuov0x3MIRKQCgOmq6x8ql8Bq8TByRcMpOJJGA+NnU+WqzTJcTci6/lwgAqlNDKALLD4JDeySXCt5EAMTPppYrbc7BJTbrEJdNBQBVRRWGAPIpcBzVCzsB0MXPpn7fBXYqB5yG0/WK97KPBNCDCMEbAewj4Fq0pMq9AIifTT3eB0ogwNkZ17sBQDUPqv0QwDUZuDpiK9NSuJ0hJ0rohwD+CMG9cs+qdlRWT65xUpmev5jzDsnxcoykyPA3w351a9u2GL/dwAMAqHY84exFiKIjuOBletrdAKAO8Lvvq4sXAGZP/1kIdIkGEdLxgJQD4UMJUZJRjCnb2JZbpMwii4jAMzC9a+KIqmnWKQDoyMqxHREgKGGMDECAyMn90qYt+yhGsGZps4q5WCHaarfc88khZG7MjgUEZDdTSAIAVUe/JwIEJQztaABBgCc5Qhc5hi/QU4GwuYfRPSQSTGYO81SgDEVA7JZJ15xSCescvOLvo5OIEobsAgjedD0h2EsVSsF2uBWCx2jsqQiICFEIAhCheP26SZYb1JEFuIZQRiKQ/1GEyH9iNJRxCOwWJ4tOm/oBYDlgvZc1IOrI8kQAWBHIdxECPH+TpQKA7iuYugcYOd+72hYAurXY0N95Y4OoSTctHQDWI8ZGE3TbLb9pLfONu3QA2AZLmhMxW+0DkJbbaFJKgH20qtgmSmBbfkDiAnhiUk8IZLPB8m130KQGYDgfZoMgmUnst3YjK+t01wBKAmwZmicCyXzETucrs31D4tXAPmPZwDNshI734YOq10b7BsXrgV0PDRC0uuNcfafbanX5YfmKQHHVK72XTEGMYtsJjazF6mDnUJcEwjMUaxCIXEMZsReGz3WNqqv1sdZm20G5JQCXXgiy1YciWg3hiy9B55nD6s3yw5k4JGIkLwiqVjXTRTlD0Ki8Ei4jzWOWHwXAoAnWhdO8pZa66dZ/sHufOFbDo3fqclfF+WFxmgrcps4PILRKf56f7pvsfX5jo2RbOS4+fvmxAAw+suOtDijkUummWR4kN/OOGq1kXo9vdPzKKm8SVYn57ANXCEYU+nfXdd4+Dxrm5p91/fyb81cNhIvB0nIYaxdVgOAwv6rK8yuYiAbPl6jMewUxVy/7NyaexfU1G0LAsvW5AXByVphWz0iyOQEY1aFIu/rR0/wjAbg4BCxilx/KrDeSgFEZJMGAU+8lBcDVe/WV/JdH8ccD0D28uIoLg2H1Ol24Odk3a1lHg9B/PpdxUYXdAOj3gmorEQjC8LlM6uSZhsQ/AFo+QBCea6/b5+K7vxiA7uXh1m9HaM1DGNbebJZwh/SFjSMKo7eLekIPZOo2N84ydOUWT34zAOZrMT3ltFJStm3ePi/jF6s+WPKOEnRbFpqUGxa58rznrwXgtUjoVl/Z7vovvzYdRvaCt9UAAAAASUVORK5CYII=" alt="Odetta">
+    <div class="word">Odetta<small>Presupuestos</small></div>
+  </div>
+  <div class="app-header-spacer"></div>
+  <div class="save-indicator" id="save-indicator"><span class="dot"></span><span id="save-indicator-text">Guardado</span></div>
+  <div class="header-usuario" id="header-usuario"></div>
+</header>
+
+<div class="app-shell">
+<aside class="app-sidebar no-imprimir">
+  <nav class="app-nav">
+    <button class="nav-tab" data-action="ir-vista" data-vista="listado-clientes">Clientes</button>
+    <button class="nav-tab" data-action="ir-vista" data-vista="catalogo">Catálogo</button>
+  </nav>
+  <img class="sidebar-watermark" src="data:image/png;base64,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" alt="" aria-hidden="true">
+</aside>
+
+<main id="app">
+
+  <!-- ================= VISTA: LISTADO DE CLIENTES ================= -->
+  <section data-view="listado-clientes">
+    <div class="view-head">
+      <div>
+        <h1>Clientes</h1>
+        <div class="sub">Cada cliente reúne sus datos de contacto, los presupuestos que se le han hecho y los costos de personal del proyecto.</div>
+      </div>
+      <button class="btn btn-primary" data-action="crear-cliente">+ Nuevo cliente</button>
+    </div>
+    <div class="toolbar">
+      <input class="input search-input" id="clientes-filtro" placeholder="Buscar por nombre, teléfono o correo…" data-action-input="filtroClientes">
+    </div>
+    <div id="listado-clientes-contenido"></div>
+  </section>
+
+  <!-- ================= VISTA: EDITOR DE CLIENTE ================= -->
+  <section data-view="editor-cliente">
+    <div id="editor-cliente-contenido"></div>
+  </section>
+
+  <!-- ================= VISTA: EDITOR DE PRESUPUESTO ================= -->
+  <section data-view="editor-presupuesto">
+    <div id="editor-contenido"></div>
+  </section>
+
+  <!-- ================= VISTA: CATÁLOGO ================= -->
+  <section data-view="catalogo">
+    <div class="view-head">
+      <div>
+        <h1>Catálogo</h1>
+        <div class="sub">Materiales, servicios y mano de obra de referencia para armar precios más rápido.</div>
+      </div>
+      <button class="btn btn-primary" data-action="crear-catalogo">+ Agregar elemento</button>
+    </div>
+    <div class="toolbar">
+      <input class="input search-input" id="catalogo-filtro" placeholder="Buscar por nombre…" data-action-input="filtroCatalogo">
+    </div>
+    <div id="catalogo-contenido"></div>
+  </section>
+
+  <!-- ================= VISTA: CLIENTE / IMPRESIÓN ================= -->
+  <section data-view="vista-cliente">
+    <div class="print-bar no-imprimir">
+      <button class="btn" data-action="volver-editor">← Volver al presupuesto</button>
+      <button class="btn btn-primary" data-action="imprimir">🖨 Imprimir / Guardar como PDF</button>
+    </div>
+    <div id="vista-cliente-contenido"></div>
+  </section>
+
+  <!-- ================= VISTA: COSTOS DE PERSONAL / IMPRESIÓN ================= -->
+  <section data-view="vista-costos-personal">
+    <div class="print-bar no-imprimir">
+      <button class="btn" data-action="ir-vista" data-vista="editor-cliente">← Volver a la ficha</button>
+      <button class="btn btn-primary" data-action="imprimir">🖨 Imprimir / Guardar como PDF</button>
+    </div>
+    <div id="vista-costos-personal-contenido"></div>
+  </section>
+
+</main>
+</div>
+
+<div class="modal-overlay" id="modal-overlay" data-action="cerrar-modal-overlay">
+  <!-- Sin stopPropagation: el cierre al hacer clic en el fondo ya solo actúa cuando e.target es el overlay mismo (ver acción "cerrar-modal-overlay"); detener la propagación aquí rompería la delegación de eventos de todo el modal, que escucha en document.body. -->
+  <div class="modal" id="modal-content"></div>
+</div>
+</div><!-- /#contenedor-app -->
+
+<div id="combobox-panel" class="combobox-panel"></div>
+
+<script>
+'use strict';
+
+/* ============================================================
+   1. CONFIG / CONSTANTES
+   ============================================================ */
+// Ya no se usa para los datos (esos viven en Supabase) — solo para recordar la última pantalla
+// vista en ESTE navegador puntual, algo que no tiene sentido sincronizar entre dispositivos.
+const STORAGE_KEY_ULTIMA_VISTA = 'odetta_ultima_vista_v1';
+
+const SUPABASE_URL = 'https://ugawfsnpwfavqjtrqmdu.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVnYXdmc25wd2ZhdnFqdHJxbWR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc5MjI0MTYsImV4cCI6MjEwMzQ5ODQxNn0.l9pLdP1-OHFQo2NOUefnDb4GSYsr36e7DOutx7ZsLBI';
+// La clave anon es segura de tener aquí, a la vista de cualquiera — la seguridad real la da
+// la Row Level Security configurada en schema.sql, no que esta clave sea secreta.
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const EMPRESA_INFO = {
+  nombre: 'Odetta Arquitectura',
+  responsable: 'Arq. Alis Menco Contreras',
+  cargo: 'Gerente',
+  telefono: 'Cel. 3017250904',
+  direccion: 'Calle 62B # 9-40 Local 1, Urbanización Castilla La Nueva',
+  ciudad: 'Montería - Córdoba',
+  saludo: 'A partir de su amable solicitud ponemos a su consideración la propuesta descrita a continuación.'
+};
+
+const CAPITULOS_SUGERIDOS = [
+  'Demolición',
+  'Obra negra y obra gris',
+  'Adecuación de baño y camerinos',
+  'Obra blanca',
+  'Estructuras metálicas',
+  'Instalaciones eléctricas',
+  'Carpintería y mobiliario'
+];
+
+const TIPOS_RECURSO = ['Mano de obra', 'Material', 'Transporte', 'Equipo', 'Otro'];
+const ESTADOS_PRESUPUESTO = ['Borrador', 'Enviado', 'Aprobado', 'Rechazado'];
+const ESTADOS_CATALOGO = ['activo', 'descontinuado'];
+
+const CATALOGO_SEMILLA = [
+  ['Cemento Argos 50kg', 'Materiales', 'bulto', 33500, ''],
+  ['Alambre negro recocido', 'Materiales', 'kg', 9200, ''],
+  ['China (agregado) por m³', 'Materiales', 'm3', 96666, ''],
+  ['Arena mediana por m³', 'Materiales', 'm3', 70000, ''],
+  ['Arena fina por m³', 'Materiales', 'm3', 70000, ''],
+  ['Varilla de 1/4', 'Materiales', 'und', 6560, ''],
+  ['Varilla de 3/8', 'Materiales', 'und', 13750, ''],
+  ['Varilla de 1/2', 'Materiales', 'und', 22450, ''],
+  ['Tabla de 30x3 metros', 'Materiales', 'und', 25000, ''],
+  ['Puntilla con cabeza 2-1/2"', 'Materiales', 'libra', 5100, ''],
+  ['Clavo acero estriado 2-1/2" x 500g', 'Materiales', 'paquete', 10400, ''],
+  ['Lámina de drywall 12.7mm', 'Materiales', 'lámina', 42999, ''],
+  ['Estuco interior x 50kg extrafino', 'Materiales', 'bulto', 54999, ''],
+  ['Estuco exterior x 25kg', 'Materiales', 'bulto', 33000, ''],
+  ['Lija de agua N°180', 'Materiales', 'und', 2000, ''],
+  ['Thinner x galón', 'Materiales', 'galón', 30000, ''],
+  ['Rodillo felpa', 'Herramientas', 'und', 8000, ''],
+  ['Brocha de 2"', 'Herramientas', 'und', 6000, ''],
+  ['Disco de pulir', 'Herramientas', 'und', 8000, ''],
+  ['Alquiler de andamio (2 cuerpos) por día', 'Equipo', 'día', 12000, ''],
+  ['Transporte de materiales (viaje local)', 'Insumos', 'viaje', 15790, '']
+];
+// Nota: la transformación a objetos vive en estadoInicial(), no aquí — este array se evalúa
+// al cargar el script, antes de que uid()/hoyISO() (definidos más abajo) existan todavía.
+function catalogoSemillaComoObjetos() {
+  return CATALOGO_SEMILLA.map(([nombre, categoria, unidad, precio, proveedor]) => ({
+    id: uid('cat'), nombre, categoria, unidad, precio, proveedor,
+    estado: 'activo', fechaActualizacion: hoyISO(), observaciones: ''
+  }));
+}
+
+const CATALOGO_SERVICIOS_SEMILLA = ['Transporte de escombros', 'Ir a buscar / recoger material (ej. una viga)'];
+function catalogoServiciosSemillaComoObjetos() {
+  return CATALOGO_SERVICIOS_SEMILLA.map(nombre => ({ id: uid('serv'), nombre }));
+}
+
+/* ============================================================
+   2. ESTADO
+   ============================================================ */
+let state = null;
+const ui = {
+  vista: 'listado-clientes',
+  presupuestoActivoId: null,
+  vistaClienteId: null,
+  vistaCostosPersonalRegistroId: null,
+  clienteActivoId: null,
+  clienteSubVista: 'presupuestos',
+  catalogoSubVista: 'materiales',
+  filtroCatalogo: '',
+  filtroClientes: '',
+  modalItemId: null,
+  modalPersonalId: null,
+  usuarioActual: null // { id, email, nombre, rol } — se llena en iniciarApp() tras el login
+};
+
+/* ============================================================
+   3. UTILIDADES
+   ============================================================ */
+let _uidCounter = 0;
+function uid(prefijo) {
+  _uidCounter += 1;
+  return prefijo + '_' + Date.now().toString(36) + '_' + _uidCounter.toString(36);
+}
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+function numero(v) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const n = parseFloat(String(v ?? '').replace(',', '.'));
+  return Number.isFinite(n) ? n : 0;
+}
+function redondear(n) { return Math.round(numero(n)); }
+function decimalAPorcentaje(v) { return Math.round(numero(v) * 10000) / 100; }
+function hoyISO() {
+  // Fecha local, no UTC: toISOString() puede adelantar o atrasar un día según la zona horaria del usuario.
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const fmtCOP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+function formatCOP(n) { return fmtCOP.format(redondear(n)); }
+
+const fmtNum = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2 });
+function formatNum(n) { return fmtNum.format(numero(n)); }
+
+// Contraparte de lectura de aplicarCampo(): busca el valor real guardado en el state para un campo
+// con formato de pesos (usado por los precios del catálogo, ver data-formato-cop más abajo).
+function leerCampoCOP(el) {
+  const entidad = el.dataset.entidad, id = el.dataset.id, campo = el.dataset.campo;
+  if (entidad === 'catalogo') { const c = encontrarCatalogo(id); return c ? numero(c[campo]) : 0; }
+  if (entidad === 'catalogoManoObra') { const c = state.catalogoManoObra.find(x => x.id === id); return c ? numero(c[campo]) : 0; }
+  return 0;
+}
+
+function formatFechaCorta(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function debounce(fn, ms) {
+  let t = null;
+  return function (...args) {
+    clearTimeout(t);
+    t = setTimeout(() => fn.apply(null, args), ms);
+  };
+}
+
+/* ============================================================
+   4. PERSISTENCIA
+   ============================================================ */
+function estadoInicial() {
+  return {
+    meta: { schemaVersion: 2 },
+    empresa: {
+      consecutivoPresupuesto: 1,
+      aiuDefecto: { administracion: 0.05, imprevistos: 0.05, utilidad: 0.05 },
+      ivaSobreUtilidadDefecto: 0.19,
+      factorMargenDefecto: 0.75,
+      formaPagoDefecto: '50% anticipo, saldo contra avance de obra'
+    },
+    catalogo: [],
+    catalogoServicios: [],
+    catalogoManoObra: [],
+    presupuestos: [],
+    clientes: []
+  };
+}
+
+function clonarProfundo(o) { return JSON.parse(JSON.stringify(o)); }
+
+/* ------------------------------------------------------------
+   4A. MAPEADORES fila (Supabase, snake_case) <-> objeto (app, camelCase)
+   ------------------------------------------------------------ */
+function filaAObjetoCliente(f) {
+  return { id: f.id, nombre: f.nombre || '', personaContacto: f.persona_contacto || '', telefono: f.telefono || '', correo: f.correo || '', direccion: f.direccion || '', observaciones: f.observaciones || '', manoDeObra: [] };
+}
+function objetoAFilaCliente(c) {
+  return { id: c.id, nombre: c.nombre, persona_contacto: c.personaContacto, telefono: c.telefono, correo: c.correo, direccion: c.direccion, observaciones: c.observaciones };
+}
+
+function filaAObjetoPresupuesto(f) {
+  return {
+    id: f.id, clienteId: f.cliente_id, numero: f.numero || '', estado: f.estado || 'Borrador',
+    proyecto: f.proyecto || '', ubicacion: f.ubicacion || '', fecha: f.fecha || '', validezDias: f.validez_dias ?? 15,
+    plazoEntrega: f.plazo_entrega || '', formaPago: f.forma_pago || '', observaciones: f.observaciones || '',
+    aplicaAiu: f.aplica_aiu !== false,
+    aiu: { administracion: numero(f.aiu_administracion), imprevistos: numero(f.aiu_imprevistos), utilidad: numero(f.aiu_utilidad) },
+    ivaSobreUtilidad: numero(f.iva_sobre_utilidad),
+    capitulos: []
+  };
+}
+function objetoAFilaPresupuesto(p) {
+  return {
+    id: p.id, cliente_id: p.clienteId, numero: p.numero, estado: p.estado, proyecto: p.proyecto, ubicacion: p.ubicacion,
+    fecha: p.fecha || null, validez_dias: numero(p.validezDias), plazo_entrega: p.plazoEntrega, forma_pago: p.formaPago,
+    observaciones: p.observaciones, aplica_aiu: p.aplicaAiu !== false,
+    aiu_administracion: numero(p.aiu.administracion), aiu_imprevistos: numero(p.aiu.imprevistos), aiu_utilidad: numero(p.aiu.utilidad),
+    iva_sobre_utilidad: numero(p.ivaSobreUtilidad)
+  };
+}
+
+function filaAObjetoCapitulo(f) { return { id: f.id, presupuestoId: f.presupuesto_id, nombre: f.nombre || '', colapsado: !!f.colapsado, orden: f.orden ?? 0, items: [] }; }
+function objetoAFilaCapitulo(c) { return { id: c.id, presupuesto_id: c.presupuestoId, nombre: c.nombre, colapsado: !!c.colapsado, orden: c.orden }; }
+function aplanarCapitulos(presupuestos) {
+  const filas = [];
+  presupuestos.forEach(p => p.capitulos.forEach((cap, i) => filas.push({ ...cap, presupuestoId: p.id, orden: i })));
+  return filas;
+}
+
+function filaAObjetoItem(f) {
+  return {
+    id: f.id, capituloId: f.capitulo_id, descripcion: f.descripcion || '', unidad: f.unidad || 'und', cantidad: numero(f.cantidad),
+    modoPrecio: f.modo_precio || 'directo', precioDirecto: numero(f.precio_directo), catalogoFiltro: f.catalogo_filtro || null,
+    trabajadorAsociadoId: f.trabajador_asociado_id || null, conceptoAsociadoId: f.concepto_asociado_id || null, orden: f.orden ?? 0,
+    apu: { factorMargen: f.apu_factor_margen != null ? numero(f.apu_factor_margen) : 0.75, recursos: [] }
+  };
+}
+function objetoAFilaItem(it) {
+  return {
+    id: it.id, capitulo_id: it.capituloId, descripcion: it.descripcion, unidad: it.unidad, cantidad: numero(it.cantidad),
+    modo_precio: it.modoPrecio, precio_directo: numero(it.precioDirecto), catalogo_filtro: it.catalogoFiltro || null,
+    apu_factor_margen: it.apu ? numero(it.apu.factorMargen) : null,
+    trabajador_asociado_id: it.trabajadorAsociadoId || null, concepto_asociado_id: it.conceptoAsociadoId || null, orden: it.orden
+  };
+}
+function aplanarItems(presupuestos) {
+  const filas = [];
+  presupuestos.forEach(p => p.capitulos.forEach(cap => cap.items.forEach((it, i) => filas.push({ ...it, capituloId: cap.id, orden: i }))));
+  return filas;
+}
+
+function filaAObjetoRecurso(f) { return { id: f.id, itemId: f.item_id, tipo: f.tipo || 'Material', descripcion: f.descripcion || '', unidad: f.unidad || '', cantidad: numero(f.cantidad), precioUnitario: numero(f.precio_unitario), catalogoId: f.catalogo_id || null }; }
+function objetoAFilaRecurso(r) { return { id: r.id, item_id: r.itemId, tipo: r.tipo, descripcion: r.descripcion, unidad: r.unidad, cantidad: numero(r.cantidad), precio_unitario: numero(r.precioUnitario), catalogo_id: r.catalogoId || null }; }
+function aplanarRecursos(presupuestos) {
+  const filas = [];
+  presupuestos.forEach(p => p.capitulos.forEach(cap => cap.items.forEach(it => it.apu.recursos.forEach(r => filas.push({ ...r, itemId: it.id })))));
+  return filas;
+}
+
+function filaAObjetoRegistroPersonal(f) { return { id: f.id, clienteId: f.cliente_id, trabajador: f.trabajador || '', fecha: f.fecha || '', retencionPorcentaje: numero(f.retencion_porcentaje), conceptos: [], anticipos: [] }; }
+function objetoAFilaRegistroPersonal(r) { return { id: r.id, cliente_id: r.clienteId, trabajador: r.trabajador, fecha: r.fecha || null, retencion_porcentaje: numero(r.retencionPorcentaje) }; }
+function aplanarRegistros(clientes) {
+  const filas = [];
+  clientes.forEach(c => c.manoDeObra.forEach(r => filas.push({ ...r, clienteId: c.id })));
+  return filas;
+}
+
+function filaAObjetoConceptoPersonal(f) { return { id: f.id, registroId: f.registro_id, descripcion: f.descripcion || '', unidad: f.unidad || 'und', cantidad: numero(f.cantidad), precioUnitario: numero(f.precio_unitario) }; }
+function objetoAFilaConceptoPersonal(cp) { return { id: cp.id, registro_id: cp.registroId, descripcion: cp.descripcion, unidad: cp.unidad, cantidad: numero(cp.cantidad), precio_unitario: numero(cp.precioUnitario) }; }
+function aplanarConceptos(clientes) {
+  const filas = [];
+  clientes.forEach(c => c.manoDeObra.forEach(r => r.conceptos.forEach(cp => filas.push({ ...cp, registroId: r.id }))));
+  return filas;
+}
+
+function filaAObjetoAnticipoPersonal(f) { return { id: f.id, registroId: f.registro_id, descripcion: f.descripcion || '', valor: numero(f.valor), fecha: f.fecha || '' }; }
+function objetoAFilaAnticipoPersonal(a) { return { id: a.id, registro_id: a.registroId, descripcion: a.descripcion, valor: numero(a.valor), fecha: a.fecha || null }; }
+function aplanarAnticipos(clientes) {
+  const filas = [];
+  clientes.forEach(c => c.manoDeObra.forEach(r => r.anticipos.forEach(a => filas.push({ ...a, registroId: r.id }))));
+  return filas;
+}
+
+function filaAObjetoCatalogoMaterial(f) { return { id: f.id, nombre: f.nombre || '', categoria: f.categoria || '', unidad: f.unidad || '', precio: numero(f.precio), proveedor: f.proveedor || '', estado: f.estado || 'activo', fechaActualizacion: f.fecha_actualizacion || hoyISO(), observaciones: f.observaciones || '' }; }
+function objetoAFilaCatalogoMaterial(c) { return { id: c.id, nombre: c.nombre, categoria: c.categoria, unidad: c.unidad, precio: numero(c.precio), proveedor: c.proveedor, estado: c.estado, fecha_actualizacion: c.fechaActualizacion || null, observaciones: c.observaciones }; }
+
+function filaAObjetoCatalogoServicio(f) { return { id: f.id, nombre: f.nombre || '' }; }
+function objetoAFilaCatalogoServicio(c) { return { id: c.id, nombre: c.nombre }; }
+
+function filaAObjetoCatalogoManoObra(f) { return { id: f.id, nombre: f.nombre || '', unidad: f.unidad || '', precio: numero(f.precio) }; }
+function objetoAFilaCatalogoManoObra(c) { return { id: c.id, nombre: c.nombre, unidad: c.unidad, precio: numero(c.precio) }; }
+
+function filaAObjetoEmpresa(f) {
+  return {
+    consecutivoPresupuesto: f.consecutivo_presupuesto ?? 1,
+    aiuDefecto: { administracion: numero(f.aiu_administracion_defecto), imprevistos: numero(f.aiu_imprevistos_defecto), utilidad: numero(f.aiu_utilidad_defecto) },
+    ivaSobreUtilidadDefecto: numero(f.iva_sobre_utilidad_defecto),
+    factorMargenDefecto: numero(f.factor_margen_defecto),
+    formaPagoDefecto: '50% anticipo, saldo contra avance de obra' // no vive en la nube, siempre fue un texto fijo
+  };
+}
+
+/* ------------------------------------------------------------
+   4B. CARGA Y GUARDADO (Supabase)
+   ------------------------------------------------------------ */
+async function cargar() {
+  const consultas = await Promise.all([
+    sb.from('clientes').select('*'),
+    sb.from('registros_personal').select('*'),
+    sb.from('conceptos_personal').select('*'),
+    sb.from('anticipos_personal').select('*'),
+    sb.from('presupuestos').select('*'),
+    sb.from('capitulos').select('*').order('orden'),
+    sb.from('items').select('*').order('orden'),
+    sb.from('recursos_apu').select('*'),
+    sb.from('catalogo_materiales').select('*'),
+    sb.from('catalogo_servicios').select('*'),
+    sb.from('catalogo_mano_obra').select('*'),
+    sb.from('empresa_config').select('*').eq('id', 1).maybeSingle()
+  ]);
+  const [rClientes, rRegistros, rConceptos, rAnticipos, rPresupuestos, rCapitulos, rItems, rRecursos, rCatMateriales, rCatServicios, rCatManoObra, rEmpresa] = consultas;
+  const conError = consultas.find(r => r.error);
+  if (conError) throw new Error('No se pudo cargar la información desde Supabase: ' + conError.error.message);
+
+  const clientes = (rClientes.data || []).map(filaAObjetoCliente);
+  const clientesPorId = new Map(clientes.map(c => [c.id, c]));
+
+  const registros = (rRegistros.data || []).map(filaAObjetoRegistroPersonal);
+  const registrosPorId = new Map(registros.map(r => [r.id, r]));
+  registros.forEach(r => { const c = clientesPorId.get(r.clienteId); if (c) c.manoDeObra.push(r); });
+
+  (rConceptos.data || []).map(filaAObjetoConceptoPersonal).forEach(cp => { const r = registrosPorId.get(cp.registroId); if (r) r.conceptos.push(cp); });
+  (rAnticipos.data || []).map(filaAObjetoAnticipoPersonal).forEach(a => { const r = registrosPorId.get(a.registroId); if (r) r.anticipos.push(a); });
+
+  const presupuestos = (rPresupuestos.data || []).map(filaAObjetoPresupuesto);
+  const presupuestosPorId = new Map(presupuestos.map(p => [p.id, p]));
+
+  const capitulos = (rCapitulos.data || []).map(filaAObjetoCapitulo);
+  const capitulosPorId = new Map(capitulos.map(c => [c.id, c]));
+  capitulos.forEach(c => { const p = presupuestosPorId.get(c.presupuestoId); if (p) p.capitulos.push(c); });
+
+  const items = (rItems.data || []).map(filaAObjetoItem);
+  const itemsPorId = new Map(items.map(i => [i.id, i]));
+  items.forEach(it => { const c = capitulosPorId.get(it.capituloId); if (c) c.items.push(it); });
+
+  (rRecursos.data || []).map(filaAObjetoRecurso).forEach(r => { const it = itemsPorId.get(r.itemId); if (it) it.apu.recursos.push(r); });
+
+  state = estadoInicial();
+  state.clientes = clientes;
+  state.presupuestos = presupuestos;
+  state.catalogo = (rCatMateriales.data || []).map(filaAObjetoCatalogoMaterial);
+  state.catalogoServicios = (rCatServicios.data || []).map(filaAObjetoCatalogoServicio);
+  state.catalogoManoObra = (rCatManoObra.data || []).map(filaAObjetoCatalogoManoObra);
+  if (rEmpresa.data) state.empresa = filaAObjetoEmpresa(rEmpresa.data);
+
+  state.presupuestos.forEach(calcularPresupuesto);
+  state.clientes.forEach(c => c.manoDeObra.forEach(calcularRegistroPersonal));
+
+  // Primer uso real (base de datos recién creada): siembra los catálogos con los materiales y
+  // servicios ya conocidos de Odetta, igual que antes hacía estadoInicial() con localStorage.
+  const primerUso = clientes.length === 0 && presupuestos.length === 0 && state.catalogo.length === 0 && state.catalogoServicios.length === 0;
+  if (primerUso) await sembrarCatalogosSiVacio();
+
+  _ultimoEstadoSincronizado = clonarProfundo(state);
+}
+
+async function sembrarCatalogosSiVacio() {
+  const materiales = catalogoSemillaComoObjetos();
+  const servicios = catalogoServiciosSemillaComoObjetos();
+  const [{ error: e1 }, { error: e2 }] = await Promise.all([
+    sb.from('catalogo_materiales').insert(materiales.map(objetoAFilaCatalogoMaterial)),
+    sb.from('catalogo_servicios').insert(servicios.map(objetoAFilaCatalogoServicio))
+  ]);
+  if (e1 || e2) { console.error('No se pudo sembrar el catálogo inicial:', e1 || e2); return; }
+  state.catalogo = materiales;
+  state.catalogoServicios = servicios;
+}
+
+// Compara una lista de filas YA MAPEADAS (columnas reales) actual vs. la última sincronizada.
+// Cualquier fila nueva o distinta (por igualdad profunda, no campo a campo) se manda entera por
+// upsert — más simple y seguro que intentar detectar qué campo puntual cambió, y el volumen de
+// datos de esta app no lo justifica de todas formas.
+function calcularDiff(filasActuales, filasAnteriores) {
+  const idsActuales = new Set(filasActuales.map(f => f.id));
+  const anteriorasPorId = new Map(filasAnteriores.map(f => [f.id, f]));
+  const cambios = filasActuales.filter(f => {
+    const anterior = anteriorasPorId.get(f.id);
+    return !anterior || JSON.stringify(f) !== JSON.stringify(anterior);
+  });
+  const borrar = filasAnteriores.filter(f => !idsActuales.has(f.id)).map(f => f.id);
+  return { cambios, borrar };
+}
+async function aplicarDiff(tabla, diff) {
+  if (diff.borrar.length) {
+    const { error } = await sb.from(tabla).delete().in('id', diff.borrar);
+    if (error) throw new Error(`Borrando en ${tabla}: ${error.message}`);
+  }
+  if (diff.cambios.length) {
+    const { error } = await sb.from(tabla).upsert(diff.cambios);
+    if (error) throw new Error(`Guardando en ${tabla}: ${error.message}`);
+  }
+}
+
+let _ultimoEstadoSincronizado = null;
+let _guardando = false;
+let _guardarPendiente = false;
+
+// Compara el state actual contra la última foto sincronizada y manda a Supabase solo lo que
+// cambió, tabla por tabla, en orden padres-antes-que-hijos (un capítulo debe existir antes de
+// que un ítem pueda referenciarlo). Un mutex simple evita que dos guardados se crucen si uno
+// todavía sigue en camino por la red cuando el siguiente debounce dispara.
+async function guardar() {
+  if (_guardando) { _guardarPendiente = true; return; }
+  _guardando = true;
+  marcarGuardando();
+  const anterior = _ultimoEstadoSincronizado || estadoInicial();
+  try {
+    await aplicarDiff('clientes', calcularDiff(state.clientes.map(objetoAFilaCliente), anterior.clientes.map(objetoAFilaCliente)));
+    await aplicarDiff('registros_personal', calcularDiff(aplanarRegistros(state.clientes).map(objetoAFilaRegistroPersonal), aplanarRegistros(anterior.clientes).map(objetoAFilaRegistroPersonal)));
+    await aplicarDiff('conceptos_personal', calcularDiff(aplanarConceptos(state.clientes).map(objetoAFilaConceptoPersonal), aplanarConceptos(anterior.clientes).map(objetoAFilaConceptoPersonal)));
+    await aplicarDiff('anticipos_personal', calcularDiff(aplanarAnticipos(state.clientes).map(objetoAFilaAnticipoPersonal), aplanarAnticipos(anterior.clientes).map(objetoAFilaAnticipoPersonal)));
+    await aplicarDiff('presupuestos', calcularDiff(state.presupuestos.map(objetoAFilaPresupuesto), anterior.presupuestos.map(objetoAFilaPresupuesto)));
+    await aplicarDiff('capitulos', calcularDiff(aplanarCapitulos(state.presupuestos).map(objetoAFilaCapitulo), aplanarCapitulos(anterior.presupuestos).map(objetoAFilaCapitulo)));
+    await aplicarDiff('items', calcularDiff(aplanarItems(state.presupuestos).map(objetoAFilaItem), aplanarItems(anterior.presupuestos).map(objetoAFilaItem)));
+    await aplicarDiff('recursos_apu', calcularDiff(aplanarRecursos(state.presupuestos).map(objetoAFilaRecurso), aplanarRecursos(anterior.presupuestos).map(objetoAFilaRecurso)));
+    await aplicarDiff('catalogo_materiales', calcularDiff(state.catalogo.map(objetoAFilaCatalogoMaterial), anterior.catalogo.map(objetoAFilaCatalogoMaterial)));
+    await aplicarDiff('catalogo_servicios', calcularDiff(state.catalogoServicios.map(objetoAFilaCatalogoServicio), anterior.catalogoServicios.map(objetoAFilaCatalogoServicio)));
+    await aplicarDiff('catalogo_mano_obra', calcularDiff(state.catalogoManoObra.map(objetoAFilaCatalogoManoObra), anterior.catalogoManoObra.map(objetoAFilaCatalogoManoObra)));
+
+    if (JSON.stringify(state.empresa) !== JSON.stringify(anterior.empresa)) {
+      const { error } = await sb.from('empresa_config').update({
+        consecutivo_presupuesto: state.empresa.consecutivoPresupuesto,
+        aiu_administracion_defecto: numero(state.empresa.aiuDefecto.administracion),
+        aiu_imprevistos_defecto: numero(state.empresa.aiuDefecto.imprevistos),
+        aiu_utilidad_defecto: numero(state.empresa.aiuDefecto.utilidad),
+        iva_sobre_utilidad_defecto: numero(state.empresa.ivaSobreUtilidadDefecto),
+        factor_margen_defecto: numero(state.empresa.factorMargenDefecto)
+      }).eq('id', 1);
+      if (error) throw new Error('Guardando configuración de empresa: ' + error.message);
+    }
+
+    _ultimoEstadoSincronizado = clonarProfundo(state);
+    marcarGuardado();
+  } catch (e) {
+    const t = document.getElementById('save-indicator-text');
+    if (t) t.textContent = 'No se pudo guardar — revisa tu conexión';
+    console.error('Error guardando en Supabase:', e);
+  } finally {
+    _guardando = false;
+    if (_guardarPendiente) { _guardarPendiente = false; guardar(); }
+  }
+}
+const guardarDebounced = debounce(guardar, 500);
+
+let _guardadoTimeout = null;
+function marcarGuardado() {
+  const ind = document.getElementById('save-indicator');
+  const txt = document.getElementById('save-indicator-text');
+  if (!ind || !txt) return;
+  ind.classList.remove('is-saving');
+  txt.textContent = 'Guardado ✓';
+  clearTimeout(_guardadoTimeout);
+}
+function marcarGuardando() {
+  const ind = document.getElementById('save-indicator');
+  const txt = document.getElementById('save-indicator-text');
+  if (!ind || !txt) return;
+  ind.classList.add('is-saving');
+  txt.textContent = 'Guardando…';
+}
+
+window.addEventListener('beforeunload', guardar);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') guardar(); });
+
+/* ============================================================
+   5. MOTOR DE CÁLCULO
+   ============================================================ */
+function calcularRecurso(r) {
+  r._total = redondear(numero(r.cantidad) * numero(r.precioUnitario));
+  return r._total;
+}
+function calcularApu(apu) {
+  const costoDirecto = apu.recursos.reduce((s, r) => s + calcularRecurso(r), 0);
+  apu._costoDirecto = redondear(costoDirecto);
+  const factor = numero(apu.factorMargen) || 1;
+  apu._precioUnitarioSugerido = redondear(costoDirecto / factor);
+  return apu._precioUnitarioSugerido;
+}
+function calcularItem(it) {
+  const pu = it.modoPrecio === 'apu' ? calcularApu(it.apu) : redondear(numero(it.precioDirecto));
+  it._precioUnitario = pu;
+  it._total = redondear(numero(it.cantidad) * pu);
+  return it._total;
+}
+function calcularCapitulo(cap) {
+  cap._subtotal = redondear(cap.items.reduce((s, it) => s + calcularItem(it), 0));
+  return cap._subtotal;
+}
+function calcularPresupuesto(p) {
+  const subtotal = redondear(p.capitulos.reduce((s, c) => s + calcularCapitulo(c), 0));
+  // El A.I.U. solo se cobra en presupuestos de obra (p.aplicaAiu) — undefined cuenta como "sí" para no romper presupuestos guardados antes de que este campo existiera.
+  const aplicaAiu = p.aplicaAiu !== false;
+  const admin = aplicaAiu ? redondear(subtotal * numero(p.aiu.administracion)) : 0;
+  const imprevistos = aplicaAiu ? redondear(subtotal * numero(p.aiu.imprevistos)) : 0;
+  const utilidad = aplicaAiu ? redondear(subtotal * numero(p.aiu.utilidad)) : 0;
+  // OJO: el IVA aplica solo sobre la línea de utilidad, nunca sobre el subtotal ni sobre el A.I.U. completo.
+  const ivaUtilidad = aplicaAiu ? redondear(utilidad * numero(p.ivaSobreUtilidad)) : 0;
+  const total = subtotal + admin + imprevistos + utilidad + ivaUtilidad;
+  p._totales = { subtotal, admin, imprevistos, utilidad, ivaUtilidad, total };
+  return p._totales;
+}
+function recalcularActivo() {
+  const p = presupuestoActivo();
+  if (p) { calcularPresupuesto(p); sincronizarConceptosAsociados(p); }
+}
+
+function calcularConceptoPersonal(cp) {
+  cp._total = redondear(numero(cp.cantidad) * numero(cp.precioUnitario));
+  return cp._total;
+}
+function calcularRegistroPersonal(r) {
+  const subtotal = redondear(r.conceptos.reduce((s, cp) => s + calcularConceptoPersonal(cp), 0));
+  const retencion = redondear(subtotal * numero(r.retencionPorcentaje));
+  const totalXPagar = subtotal - retencion;
+  const totalAnticipos = redondear(r.anticipos.reduce((s, a) => s + numero(a.valor), 0));
+  const saldo = totalXPagar - totalAnticipos;
+  r._subtotal = subtotal; r._retencion = retencion; r._totalXPagar = totalXPagar;
+  r._totalAnticipos = totalAnticipos; r._saldo = saldo;
+  return r;
+}
+
+/* ============================================================
+   6. BÚSQUEDA / NAVEGACIÓN DE ENTIDADES
+   ============================================================ */
+function presupuestoActivo() { return state.presupuestos.find(p => p.id === ui.presupuestoActivoId) || null; }
+function clienteActivo() { return state.clientes.find(c => c.id === ui.clienteActivoId) || null; }
+function encontrarCliente(id) { return state.clientes.find(c => c.id === id) || null; }
+function registroPersonalActivo() {
+  const c = clienteActivo();
+  return c ? c.manoDeObra.find(r => r.id === ui.modalPersonalId) || null : null;
+}
+function encontrarCapitulo(p, capId) { return p.capitulos.find(c => c.id === capId) || null; }
+function encontrarItemGlobal(p, itemId) {
+  for (const cap of p.capitulos) {
+    const it = cap.items.find(i => i.id === itemId);
+    if (it) return { cap, item: it };
+  }
+  return null;
+}
+function encontrarRecurso(item, recId) { return item.apu.recursos.find(r => r.id === recId) || null; }
+function encontrarCatalogo(id) { return state.catalogo.find(c => c.id === id) || null; }
+// Busca por nombre exacto en los 3 catálogos (materiales, servicios, mano de obra) y normaliza
+// el resultado a una sola forma: unidad/precio quedan en null cuando ese catálogo no los tiene
+// (servicios, que es solo nombre), para que quien reciba el resultado sepa qué campos NO tocar.
+function buscarEnCatalogos(nombre) {
+  const n = String(nombre || '').trim().toLowerCase();
+  if (!n) return null;
+  const mat = state.catalogo.find(c => c.nombre.trim().toLowerCase() === n);
+  if (mat) return { id: mat.id, nombre: mat.nombre, unidad: mat.unidad, precio: mat.precio };
+  const serv = state.catalogoServicios.find(c => c.nombre.trim().toLowerCase() === n);
+  if (serv) return { id: serv.id, nombre: serv.nombre, unidad: null, precio: null };
+  const mo = state.catalogoManoObra.find(c => c.nombre.trim().toLowerCase() === n);
+  if (mo) return { id: mo.id, nombre: mo.nombre, unidad: mo.unidad, precio: mo.precio };
+  return null;
+}
+function resolverOCrearCliente(nombre) {
+  const n = String(nombre || '').trim();
+  if (!n) return null;
+  let cli = state.clientes.find(c => c.nombre.trim().toLowerCase() === n.toLowerCase());
+  if (!cli) {
+    cli = crearClienteVacio(n);
+    state.clientes.unshift(cli);
+  }
+  return cli;
+}
+
+/* ============================================================
+   7. ACCIONES — PRESUPUESTOS
+   ============================================================ */
+// El consecutivo se incrementa en la base de datos (función next_consecutivo(), ver schema.sql)
+// en vez de leer-sumar1-guardar aquí en JS — con más de un usuario conectado a la vez, hacerlo
+// en JS puede hacer que dos personas creen un presupuesto con el mismo número.
+async function siguienteNumeroCotizacion() {
+  const { data, error } = await sb.rpc('next_consecutivo');
+  if (error) { alert('No se pudo generar el número de cotización. Intenta de nuevo.'); return null; }
+  return 'COT-' + String(data).padStart(4, '0');
+}
+function crearPresupuestoVacio(numero) {
+  return {
+    id: uid('pres'), numero, estado: 'Borrador',
+    clienteId: null, proyecto: '', ubicacion: '', fecha: hoyISO(),
+    validezDias: 15, plazoEntrega: '', formaPago: state.empresa.formaPagoDefecto, observaciones: '',
+    aplicaAiu: true,
+    aiu: { ...state.empresa.aiuDefecto },
+    ivaSobreUtilidad: state.empresa.ivaSobreUtilidadDefecto,
+    capitulos: []
+  };
+}
+async function crearPresupuesto() {
+  const cliente = clienteActivo();
+  if (!cliente) return; // un presupuesto siempre se crea desde dentro de un cliente
+  const numero = await siguienteNumeroCotizacion();
+  if (!numero) return;
+  const p = crearPresupuestoVacio(numero);
+  p.clienteId = cliente.id;
+  calcularPresupuesto(p);
+  state.presupuestos.unshift(p);
+  guardar();
+  ui.presupuestoActivoId = p.id;
+  mostrarVista('editor-presupuesto');
+}
+function abrirPresupuesto(id) {
+  ui.presupuestoActivoId = id;
+  mostrarVista('editor-presupuesto');
+}
+async function duplicarPresupuesto(id) {
+  const original = state.presupuestos.find(p => p.id === id);
+  if (!original) return;
+  const numero = await siguienteNumeroCotizacion();
+  if (!numero) return;
+  const copia = structuredClone(original);
+  copia.id = uid('pres');
+  copia.numero = numero;
+  copia.estado = 'Borrador';
+  // La asociación a un trabajador apunta a un concepto concreto del presupuesto ORIGINAL —
+  // la copia no puede compartir ese mismo concepto, así que arranca sin ningún ítem asociado.
+  copia.capitulos.forEach(cap => cap.items.forEach(it => { it.trabajadorAsociadoId = null; it.conceptoAsociadoId = null; }));
+  calcularPresupuesto(copia);
+  state.presupuestos.unshift(copia);
+  guardar();
+  renderEditorCliente();
+}
+function eliminarPresupuesto(id) {
+  const p = state.presupuestos.find(x => x.id === id);
+  if (!p) return;
+  const nombreCliente = (p.clienteId && encontrarCliente(p.clienteId)?.nombre) || 'sin cliente';
+  if (!confirm(`¿Eliminar el presupuesto ${p.numero} (${nombreCliente})? Esta acción no se puede deshacer.`)) return;
+  const cliente = encontrarCliente(p.clienteId);
+  p.capitulos.forEach(cap => cap.items.forEach(item => borrarConceptoAsociado(item, cliente)));
+  state.presupuestos = state.presupuestos.filter(x => x.id !== id);
+  guardar();
+  renderEditorCliente();
+}
+
+/* ============================================================
+   7B. ACCIONES — CLIENTES Y MANO DE OBRA
+   ============================================================ */
+function crearClienteVacio(nombre) {
+  return { id: uid('cli'), nombre: nombre || 'Nuevo cliente', personaContacto: '', telefono: '', correo: '', direccion: '', observaciones: '', manoDeObra: [] };
+}
+function crearCliente() {
+  const c = crearClienteVacio('Nuevo cliente');
+  state.clientes.unshift(c);
+  guardar();
+  ui.clienteActivoId = c.id;
+  ui.clienteSubVista = 'presupuestos';
+  mostrarVista('editor-cliente');
+}
+function abrirCliente(id) {
+  ui.clienteActivoId = id;
+  ui.clienteSubVista = 'presupuestos';
+  mostrarVista('editor-cliente');
+}
+function eliminarCliente(id) {
+  const c = encontrarCliente(id);
+  if (!c) return;
+  const enUso = state.presupuestos.some(p => p.clienteId === id);
+  const msg = enUso
+    ? `"${c.nombre}" tiene presupuestos asociados. Si lo eliminas, esos presupuestos quedarán sin cliente asignado. ¿Eliminar de todas formas?`
+    : `¿Eliminar a "${c.nombre}"? Esta acción no se puede deshacer.`;
+  if (!confirm(msg)) return;
+  state.clientes = state.clientes.filter(x => x.id !== id);
+  guardar();
+  renderListadoClientes();
+}
+function crearRegistroManoObra() {
+  const c = clienteActivo();
+  if (!c) return;
+  const r = {
+    id: uid('mo'), trabajador: '', fecha: hoyISO(),
+    conceptos: [{ id: uid('cp'), descripcion: '', unidad: 'und', cantidad: 1, precioUnitario: 0 }],
+    retencionPorcentaje: 0.04,
+    anticipos: []
+  };
+  calcularRegistroPersonal(r);
+  c.manoDeObra.unshift(r);
+  guardar();
+  abrirModalPersonal(r.id);
+}
+function eliminarRegistroManoObra(id) {
+  const c = clienteActivo();
+  if (!c) return;
+  const r = c.manoDeObra.find(x => x.id === id);
+  if (r && !confirm(`¿Eliminar el registro de "${r.trabajador || 'este trabajador'}"? Esta acción no se puede deshacer.`)) return;
+  c.manoDeObra = c.manoDeObra.filter(x => x.id !== id);
+  guardar();
+  renderEditorCliente();
+}
+function recalcularRegistroPersonalActivo() {
+  const r = registroPersonalActivo();
+  if (r) calcularRegistroPersonal(r);
+}
+function abrirModalPersonal(id) {
+  ui.modalPersonalId = id;
+  document.getElementById('modal-content').classList.add('modal-wide');
+  renderModalPersonal();
+  document.getElementById('modal-overlay').classList.add('is-open');
+}
+function cerrarModalPersonal() {
+  ui.modalPersonalId = null;
+  document.getElementById('modal-content').classList.remove('modal-wide');
+  document.getElementById('modal-overlay').classList.remove('is-open');
+  renderEditorCliente();
+}
+function crearConceptoPersonal() {
+  const r = registroPersonalActivo();
+  if (!r) return;
+  r.conceptos.push({ id: uid('cp'), descripcion: '', unidad: 'und', cantidad: 1, precioUnitario: 0 });
+  recalcularRegistroPersonalActivo(); guardar();
+  renderModalPersonal();
+}
+function eliminarConceptoPersonal(id) {
+  const r = registroPersonalActivo();
+  if (!r) return;
+  r.conceptos = r.conceptos.filter(cp => cp.id !== id);
+  recalcularRegistroPersonalActivo(); guardar();
+  renderModalPersonal();
+}
+function crearAnticipoPersonal() {
+  const r = registroPersonalActivo();
+  if (!r) return;
+  r.anticipos.push({ id: uid('an'), descripcion: '', valor: 0, fecha: hoyISO() });
+  recalcularRegistroPersonalActivo(); guardar();
+  renderModalPersonal();
+}
+function eliminarAnticipoPersonal(id) {
+  const r = registroPersonalActivo();
+  if (!r) return;
+  r.anticipos = r.anticipos.filter(a => a.id !== id);
+  recalcularRegistroPersonalActivo(); guardar();
+  renderModalPersonal();
+}
+
+/* ============================================================
+   8. ACCIONES — CAPÍTULOS E ÍTEMS
+   ============================================================ */
+function crearCapitulo(nombre) {
+  const p = presupuestoActivo();
+  if (!p) return;
+  p.capitulos.push({ id: uid('cap'), nombre: nombre || 'Nuevo capítulo', colapsado: false, items: [] });
+  recalcularActivo(); guardar(); renderEditor();
+}
+function usarCapitulosSugeridos() {
+  const p = presupuestoActivo();
+  if (!p) return;
+  const existentes = new Set(p.capitulos.map(c => c.nombre.trim().toLowerCase()));
+  CAPITULOS_SUGERIDOS.forEach(nombre => {
+    if (!existentes.has(nombre.trim().toLowerCase())) {
+      p.capitulos.push({ id: uid('cap'), nombre, colapsado: false, items: [] });
+    }
+  });
+  recalcularActivo(); guardar(); renderEditor();
+}
+function eliminarCapitulo(capId) {
+  const p = presupuestoActivo();
+  const cap = encontrarCapitulo(p, capId);
+  if (!cap) return;
+  if (!confirm(`¿Eliminar el capítulo "${cap.nombre}" y todos sus ítems?`)) return;
+  const cliente = encontrarCliente(p.clienteId);
+  cap.items.forEach(item => borrarConceptoAsociado(item, cliente));
+  p.capitulos = p.capitulos.filter(c => c.id !== capId);
+  recalcularActivo(); guardar(); renderEditor();
+}
+function moverCapitulo(capId, dir) {
+  const p = presupuestoActivo();
+  const idx = p.capitulos.findIndex(c => c.id === capId);
+  const destino = idx + dir;
+  if (idx < 0 || destino < 0 || destino >= p.capitulos.length) return;
+  const [cap] = p.capitulos.splice(idx, 1);
+  p.capitulos.splice(destino, 0, cap);
+  guardar(); renderEditor();
+}
+function toggleColapsoCapitulo(capId) {
+  const p = presupuestoActivo();
+  const cap = encontrarCapitulo(p, capId);
+  if (!cap) return;
+  cap.colapsado = !cap.colapsado;
+  renderEditor();
+}
+
+function crearItemVacio() {
+  return {
+    id: uid('item'), descripcion: '', unidad: 'und', cantidad: 1,
+    modoPrecio: 'directo', precioDirecto: 0, catalogoFiltro: null,
+    trabajadorAsociadoId: null, conceptoAsociadoId: null,
+    apu: { factorMargen: state.empresa.factorMargenDefecto, recursos: [] }
+  };
+}
+function alternarCatalogoFiltroItem(itemId, filtro) {
+  const p = presupuestoActivo();
+  const { item } = encontrarItemGlobal(p, itemId);
+  if (!item) return;
+  item.catalogoFiltro = item.catalogoFiltro === filtro ? null : filtro;
+  guardar();
+  renderEditor();
+}
+
+// Quita el vínculo de un ítem con un trabajador SIN borrar el concepto que ya se había creado en
+// costos de personal — queda ahí como un registro normal y editable, no se pierde información.
+function quitarConceptoAsociado(item, cliente) {
+  if (!item.trabajadorAsociadoId) return;
+  const registro = cliente && cliente.manoDeObra.find(r => r.id === item.trabajadorAsociadoId);
+  item.trabajadorAsociadoId = null;
+  item.conceptoAsociadoId = null;
+  if (registro) calcularRegistroPersonal(registro);
+}
+// Elimina de verdad el concepto que un ítem había creado (para cuando el ítem mismo se borra:
+// ya no tiene sentido dejar un pago "fantasma" en costos de personal sin nada que lo explique).
+function borrarConceptoAsociado(item, cliente) {
+  if (!item.trabajadorAsociadoId) return;
+  const registro = cliente && cliente.manoDeObra.find(r => r.id === item.trabajadorAsociadoId);
+  if (registro) {
+    registro.conceptos = registro.conceptos.filter(cp => cp.id !== item.conceptoAsociadoId);
+    calcularRegistroPersonal(registro);
+  }
+  item.trabajadorAsociadoId = null;
+  item.conceptoAsociadoId = null;
+}
+// Cambia a qué trabajador está asociado un ítem (o lo desasocia si nuevoTrabajadorId es vacío).
+// Crea un concepto nuevo en el registro de costos de personal del trabajador elegido, con la
+// misma descripción/unidad/cantidad/precio unitario que el ítem tiene en ese momento.
+function asociarItemATrabajador(itemId, nuevoTrabajadorId) {
+  const p = presupuestoActivo();
+  if (!p) return;
+  const encontrado = encontrarItemGlobal(p, itemId);
+  const item = encontrado && encontrado.item;
+  if (!item) return;
+  const cliente = encontrarCliente(p.clienteId);
+  quitarConceptoAsociado(item, cliente);
+  if (nuevoTrabajadorId && cliente) {
+    const registro = cliente.manoDeObra.find(r => r.id === nuevoTrabajadorId);
+    if (registro) {
+      const concepto = { id: uid('cp'), descripcion: item.descripcion, unidad: item.unidad, cantidad: item.cantidad, precioUnitario: item._precioUnitario };
+      registro.conceptos.push(concepto);
+      calcularRegistroPersonal(registro);
+      item.trabajadorAsociadoId = registro.id;
+      item.conceptoAsociadoId = concepto.id;
+    }
+  }
+  recalcularActivo();
+  guardar();
+  renderEditor();
+}
+// Mientras un ítem siga asociado a un trabajador, su concepto en costos de personal debe reflejar
+// siempre los datos actuales del ítem (si cambia la descripción, cantidad o precio, el pago del
+// trabajador se actualiza solo — para eso se pidió la asociación automática). Si el trabajador o
+// el concepto fueron borrados por otro lado mientras tanto, el ítem se desasocia solo, sin fallar.
+function sincronizarConceptosAsociados(p) {
+  const cliente = encontrarCliente(p.clienteId);
+  if (!cliente) return;
+  const registrosTocados = new Set();
+  p.capitulos.forEach(cap => cap.items.forEach(item => {
+    if (!item.trabajadorAsociadoId) return;
+    const registro = cliente.manoDeObra.find(r => r.id === item.trabajadorAsociadoId);
+    if (!registro) { item.trabajadorAsociadoId = null; item.conceptoAsociadoId = null; return; }
+    const concepto = registro.conceptos.find(cp => cp.id === item.conceptoAsociadoId);
+    if (!concepto) { item.trabajadorAsociadoId = null; item.conceptoAsociadoId = null; return; }
+    concepto.descripcion = item.descripcion;
+    concepto.unidad = item.unidad;
+    concepto.cantidad = item.cantidad;
+    concepto.precioUnitario = item._precioUnitario;
+    registrosTocados.add(registro);
+  }));
+  registrosTocados.forEach(calcularRegistroPersonal);
+}
+function crearItem(capId) {
+  const p = presupuestoActivo();
+  const cap = encontrarCapitulo(p, capId);
+  if (!cap) return;
+  cap.items.push(crearItemVacio());
+  recalcularActivo(); guardar(); renderEditor();
+}
+function eliminarItem(itemId) {
+  const p = presupuestoActivo();
+  const cliente = encontrarCliente(p.clienteId);
+  for (const cap of p.capitulos) {
+    const idx = cap.items.findIndex(i => i.id === itemId);
+    if (idx >= 0) { borrarConceptoAsociado(cap.items[idx], cliente); cap.items.splice(idx, 1); break; }
+  }
+  recalcularActivo(); guardar(); renderEditor();
+}
+function moverItem(itemId, dir) {
+  const p = presupuestoActivo();
+  for (const cap of p.capitulos) {
+    const idx = cap.items.findIndex(i => i.id === itemId);
+    if (idx >= 0) {
+      const destino = idx + dir;
+      if (destino < 0 || destino >= cap.items.length) return;
+      const [it] = cap.items.splice(idx, 1);
+      cap.items.splice(destino, 0, it);
+      break;
+    }
+  }
+  guardar(); renderEditor();
+}
+
+/* ============================================================
+   9. ACCIONES — MODAL DE PRECIO DE ÍTEM (directo / APU)
+   ============================================================ */
+function abrirModalItem(itemId) {
+  ui.modalItemId = itemId;
+  renderModalItem();
+  document.getElementById('modal-overlay').classList.add('is-open');
+}
+function cerrarModalItem() {
+  ui.modalItemId = null;
+  document.getElementById('modal-overlay').classList.remove('is-open');
+  renderEditor();
+}
+function cambiarModoPrecio(itemId, modo) {
+  const p = presupuestoActivo();
+  const { item } = encontrarItemGlobal(p, itemId);
+  item.modoPrecio = modo;
+  recalcularActivo(); guardar();
+  renderModalItem();
+  refrescarNumerosEditor();
+}
+function crearRecurso(itemId) {
+  const p = presupuestoActivo();
+  const { item } = encontrarItemGlobal(p, itemId);
+  item.apu.recursos.push({ id: uid('rec'), tipo: 'Material', descripcion: '', unidad: 'und', cantidad: 1, precioUnitario: 0, catalogoId: null });
+  recalcularActivo(); guardar();
+  renderModalItem();
+  refrescarNumerosEditor();
+}
+function eliminarRecurso(recId) {
+  const p = presupuestoActivo();
+  const { item } = encontrarItemGlobal(p, ui.modalItemId);
+  item.apu.recursos = item.apu.recursos.filter(r => r.id !== recId);
+  recalcularActivo(); guardar();
+  renderModalItem();
+  refrescarNumerosEditor();
+}
+
+/* ============================================================
+   10. ACCIONES — CATÁLOGO
+   ============================================================ */
+function crearElementoCatalogo() {
+  state.catalogo.unshift({
+    id: uid('cat'), nombre: 'Nuevo material', categoria: 'Materiales', unidad: 'und',
+    precio: 0, proveedor: '', estado: 'activo', fechaActualizacion: hoyISO(), observaciones: ''
+  });
+  guardar(); renderCatalogo();
+}
+function eliminarElementoCatalogo(id) {
+  const c = encontrarCatalogo(id);
+  if (!c) return;
+  if (!confirm(`¿Eliminar "${c.nombre}" del catálogo?`)) return;
+  state.catalogo = state.catalogo.filter(x => x.id !== id);
+  guardar(); renderCatalogo();
+}
+function crearElementoCatalogoServicio() {
+  state.catalogoServicios.unshift({ id: uid('serv'), nombre: 'Nuevo servicio' });
+  guardar(); renderCatalogo();
+}
+function eliminarElementoCatalogoServicio(id) {
+  const c = state.catalogoServicios.find(x => x.id === id);
+  if (!c) return;
+  if (!confirm(`¿Eliminar "${c.nombre}" del catálogo de servicios?`)) return;
+  state.catalogoServicios = state.catalogoServicios.filter(x => x.id !== id);
+  guardar(); renderCatalogo();
+}
+function crearElementoCatalogoManoObra() {
+  const m = { id: uid('mocat'), nombre: 'Nueva labor', unidad: 'und', precio: 0 };
+  state.catalogoManoObra.unshift(m);
+  guardar(); renderCatalogo();
+}
+function eliminarElementoCatalogoManoObra(id) {
+  const c = state.catalogoManoObra.find(x => x.id === id);
+  if (!c) return;
+  if (!confirm(`¿Eliminar "${c.nombre}" del catálogo de mano de obra?`)) return;
+  state.catalogoManoObra = state.catalogoManoObra.filter(x => x.id !== id);
+  guardar(); renderCatalogo();
+}
+
+/* ============================================================
+   11. CAMPO GENÉRICO (usado por listeners de input/change)
+   ============================================================ */
+function aplicarCampo(entidad, id, campo, valor) {
+  const p = presupuestoActivo();
+  if (entidad === 'presupuesto') { p[campo] = valor; }
+  else if (entidad === 'capitulo') { const c = encontrarCapitulo(p, id); if (c) c[campo] = valor; }
+  else if (entidad === 'item') { const f = encontrarItemGlobal(p, id); if (f) f.item[campo] = valor; }
+  else if (entidad === 'apu') { const f = encontrarItemGlobal(p, id); if (f) f.item.apu[campo] = valor; }
+  else if (entidad === 'recurso') { const f = encontrarItemGlobal(p, ui.modalItemId); if (f) { const r = encontrarRecurso(f.item, id); if (r) r[campo] = valor; } }
+  else if (entidad === 'aiu') { p.aiu[campo] = valor; }
+  else if (entidad === 'catalogo') { const c = encontrarCatalogo(id); if (c) { c[campo] = valor; if (campo === 'precio') c.fechaActualizacion = hoyISO(); } }
+  else if (entidad === 'catalogoServicio') { const c = state.catalogoServicios.find(x => x.id === id); if (c) c[campo] = valor; }
+  else if (entidad === 'catalogoManoObra') { const c = state.catalogoManoObra.find(x => x.id === id); if (c) c[campo] = valor; }
+  else if (entidad === 'cliente') { const c = encontrarCliente(id); if (c) c[campo] = valor; }
+  else if (entidad === 'registroPersonal') { const c = clienteActivo(); if (c) { const r = c.manoDeObra.find(x => x.id === id); if (r) r[campo] = valor; } }
+  else if (entidad === 'conceptoPersonal') { const r = registroPersonalActivo(); if (r) { const cp = r.conceptos.find(x => x.id === id); if (cp) cp[campo] = valor; } }
+  else if (entidad === 'anticipoPersonal') { const r = registroPersonalActivo(); if (r) { const a = r.anticipos.find(x => x.id === id); if (a) a[campo] = valor; } }
+}
+
+function aplicarCatalogoAResurso(recId, hit) {
+  const p = presupuestoActivo();
+  const { item } = encontrarItemGlobal(p, ui.modalItemId);
+  const r = encontrarRecurso(item, recId);
+  if (!r || !hit) return;
+  r.descripcion = hit.nombre;
+  if (hit.unidad !== null) r.unidad = hit.unidad;
+  if (hit.precio !== null) r.precioUnitario = hit.precio;
+  r.catalogoId = hit.id;
+}
+function aplicarCatalogoAItem(itemId, hit) {
+  const p = presupuestoActivo();
+  const { item } = encontrarItemGlobal(p, itemId);
+  if (!item || !hit) return;
+  item.descripcion = hit.nombre;
+  if (hit.unidad !== null) item.unidad = hit.unidad;
+  if (hit.precio !== null && item.modoPrecio === 'directo') item.precioDirecto = hit.precio;
+}
+
+/* ============================================================
+   12. ROUTER
+   ============================================================ */
+function mostrarVista(nombre, params) {
+  params = params || {};
+  ui.vista = nombre;
+  if (nombre === 'vista-cliente' && params.presupuestoId) ui.vistaClienteId = params.presupuestoId;
+  if (nombre === 'vista-costos-personal') ui.vistaCostosPersonalRegistroId = params.registroId || null;
+  document.querySelectorAll('[data-view]').forEach(el => el.classList.toggle('is-active', el.dataset.view === nombre));
+  document.querySelectorAll('.nav-tab').forEach(el => el.classList.toggle('is-active',
+    el.dataset.vista === nombre
+    || (['editor-cliente', 'editor-presupuesto', 'vista-cliente', 'vista-costos-personal'].includes(nombre) && el.dataset.vista === 'listado-clientes')
+  ));
+  window.scrollTo(0, 0);
+  // Recuerda dónde estabas para que recargar la página no te devuelva siempre al listado de
+  // clientes. Vive en localStorage de ESTE navegador, no en Supabase: en qué pantalla estabas
+  // no tiene sentido compartirlo entre dispositivos ni cuenta como un dato real de negocio, así
+  // que navegar entre vistas ya no dispara ningún guardado en la nube.
+  try {
+    localStorage.setItem(STORAGE_KEY_ULTIMA_VISTA, JSON.stringify({
+      vista: nombre,
+      clienteActivoId: ui.clienteActivoId,
+      presupuestoActivoId: ui.presupuestoActivoId,
+      vistaClienteId: ui.vistaClienteId,
+      vistaCostosPersonalRegistroId: ui.vistaCostosPersonalRegistroId,
+      clienteSubVista: ui.clienteSubVista,
+      catalogoSubVista: ui.catalogoSubVista
+    }));
+  } catch (e) { /* almacenamiento no disponible: no pasa nada, solo no se recuerda la vista */ }
+  if (nombre === 'editor-presupuesto') renderEditor();
+  else if (nombre === 'catalogo') renderCatalogo();
+  else if (nombre === 'vista-cliente') renderVistaCliente();
+  else if (nombre === 'vista-costos-personal') renderVistaCostosPersonal();
+  else if (nombre === 'listado-clientes') renderListadoClientes();
+  else if (nombre === 'editor-cliente') renderEditorCliente();
+}
+function restaurarUltimaVista() {
+  let uv = null;
+  try { uv = JSON.parse(localStorage.getItem(STORAGE_KEY_ULTIMA_VISTA) || 'null'); } catch (e) { /* dato corrupto: cae a listado-clientes */ }
+  if (!uv || !uv.vista) { mostrarVista('listado-clientes'); return; }
+  ui.clienteActivoId = uv.clienteActivoId || null;
+  ui.presupuestoActivoId = uv.presupuestoActivoId || null;
+  ui.vistaClienteId = uv.vistaClienteId || null;
+  ui.clienteSubVista = uv.clienteSubVista || 'presupuestos';
+  ui.catalogoSubVista = uv.catalogoSubVista || 'materiales';
+
+  if ((uv.vista === 'editor-cliente' || uv.vista === 'vista-costos-personal') && !encontrarCliente(ui.clienteActivoId)) { mostrarVista('listado-clientes'); return; }
+  if (uv.vista === 'editor-presupuesto' && !state.presupuestos.find(p => p.id === ui.presupuestoActivoId)) { mostrarVista('listado-clientes'); return; }
+  if (uv.vista === 'vista-cliente' && !state.presupuestos.find(p => p.id === ui.vistaClienteId)) { mostrarVista('listado-clientes'); return; }
+  if (uv.vista === 'vista-costos-personal') { mostrarVista(uv.vista, { registroId: uv.vistaCostosPersonalRegistroId }); return; }
+  mostrarVista(uv.vista);
+}
+
+/* ============================================================
+   13. UTILIDAD — PRESUPUESTO ↔ CLIENTE
+   ============================================================ */
+function nombreClienteDePresupuesto(p) {
+  return (p.clienteId && encontrarCliente(p.clienteId)?.nombre) || '';
+}
+
+/* ============================================================
+   14. RENDER — EDITOR DE PRESUPUESTO
+   ============================================================ */
+function renderEditor() {
+  const p = presupuestoActivo();
+  const cont = document.getElementById('editor-contenido');
+  if (!p) { cont.innerHTML = `<div class="empty-state"><p>Abre un presupuesto desde la ficha de un cliente.</p></div>`; return; }
+  const nombreClienteActual = nombreClienteDePresupuesto(p);
+  const aplicaAiu = p.aplicaAiu !== false;
+  const clienteDelPresupuesto = encontrarCliente(p.clienteId);
+  const trabajadoresCliente = clienteDelPresupuesto ? clienteDelPresupuesto.manoDeObra : [];
+
+  cont.innerHTML = `
+    <div class="editor-topbar">
+      <div class="info">
+        <h1><span class="mono">${esc(p.numero)}</span><span class="badge badge-${p.estado.toLowerCase()}">${p.estado}</span></h1>
+        <div class="sub">${esc(nombreClienteActual) || 'Sin cliente'}${p.proyecto ? ' · ' + esc(p.proyecto) : ''}</div>
+      </div>
+      <button class="btn" data-action="volver-a-cliente" data-id="${p.clienteId || ''}">← ${esc(nombreClienteActual) || 'Cliente'}</button>
+      <button class="btn btn-primary" data-action="ver-cliente" data-id="${p.id}">👁 Ver como cliente / Imprimir</button>
+    </div>
+
+    <div class="editor-section">
+      <h2>Datos generales</h2>
+      <div class="card" style="padding:18px 20px;">
+        <div class="field-grid">
+          ${campoTexto('presupuesto', p.id, 'proyecto', 'Proyecto / Concepto', p.proyecto)}
+          ${campoTexto('presupuesto', p.id, 'ubicacion', 'Ubicación', p.ubicacion)}
+          ${campoFecha('presupuesto', p.id, 'fecha', 'Fecha', p.fecha)}
+          ${campoNumero('presupuesto', p.id, 'validezDias', 'Validez (días)', p.validezDias)}
+          ${campoTexto('presupuesto', p.id, 'plazoEntrega', 'Plazo de entrega', p.plazoEntrega)}
+          ${campoTexto('presupuesto', p.id, 'formaPago', 'Forma de pago', p.formaPago)}
+          ${campoSelect('presupuesto', p.id, 'estado', 'Estado', p.estado, ESTADOS_PRESUPUESTO)}
+        </div>
+        <div class="field" style="margin-top:14px;">
+          <label>Observaciones <span class="hint">(se muestran al cliente, debajo de las condiciones comerciales)</span></label>
+          <textarea class="textarea" data-entidad="presupuesto" data-id="${p.id}" data-campo="observaciones">${esc(p.observaciones)}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="editor-section">
+      <h2>A.I.U.</h2>
+      <div class="card" style="padding:18px 20px;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" data-entidad="presupuesto" data-id="${p.id}" data-campo="aplicaAiu" ${aplicaAiu ? 'checked' : ''}>
+          <span>Este presupuesto es de obra — aplica A.I.U.</span>
+        </label>
+        ${aplicaAiu ? `
+        <div class="field-grid" style="margin-top:14px;">
+          ${campoPorcentaje('aiu', p.id, 'administracion', 'Administración', p.aiu.administracion)}
+          ${campoPorcentaje('aiu', p.id, 'imprevistos', 'Imprevistos', p.aiu.imprevistos)}
+          ${campoPorcentaje('aiu', p.id, 'utilidad', 'Utilidad (mínimo 5%)', p.aiu.utilidad)}
+        </div>
+        ` : `<p class="hint" style="margin-top:10px;">El A.I.U. se cobra solo en obra. Este presupuesto no lo incluye — el total será igual al subtotal.</p>`}
+      </div>
+    </div>
+
+    <div class="editor-section">
+      <h2>Capítulos e ítems</h2>
+      <div class="chapters-toolbar">
+        <button class="btn" data-action="crear-capitulo">+ Agregar capítulo</button>
+        <button class="btn btn-ghost" data-action="capitulos-sugeridos">Usar los 7 capítulos típicos</button>
+      </div>
+      ${p.capitulos.length === 0 ? `<div class="empty-state"><p>Este presupuesto todavía no tiene capítulos. Agrega uno, o usa la plantilla de capítulos típicos.</p></div>` : p.capitulos.map((cap, idx) => renderCapitulo(cap, idx, trabajadoresCliente)).join('')}
+    </div>
+
+    <div class="summary-panel">
+      <div class="summary-grid">
+        <div class="summary-item"><span class="lbl">Subtotal</span><span class="val" data-resumen="subtotal">${formatCOP(p._totales.subtotal)}</span></div>
+        ${aplicaAiu ? `
+        <div class="summary-item"><span class="lbl">Administración</span><span class="val" data-resumen="admin">${formatCOP(p._totales.admin)}</span></div>
+        <div class="summary-item"><span class="lbl">Imprevistos</span><span class="val" data-resumen="imprevistos">${formatCOP(p._totales.imprevistos)}</span></div>
+        <div class="summary-item"><span class="lbl">Utilidad</span><span class="val" data-resumen="utilidad">${formatCOP(p._totales.utilidad)}</span></div>
+        <div class="summary-item"><span class="lbl">IVA sobre utilidad</span><span class="val" data-resumen="ivaUtilidad">${formatCOP(p._totales.ivaUtilidad)}</span></div>
+        ` : ''}
+        <div class="summary-item total"><span class="lbl">Total</span><span class="val" data-resumen="total">${formatCOP(p._totales.total)}</span></div>
+      </div>
+    </div>
+  `;
+}
+
+function renderCapitulo(cap, idx, trabajadoresCliente) {
+  const codigo = String(idx + 1);
+  return `
+    <div class="chapter" data-id="${cap.id}">
+      <div class="chapter-head">
+        <button class="chapter-toggle" data-action="toggle-capitulo" data-id="${cap.id}">${cap.colapsado ? '▸' : '▾'}</button>
+        <span class="chapter-code mono">${codigo}</span>
+        <input class="chapter-name-input" data-entidad="capitulo" data-id="${cap.id}" data-campo="nombre" value="${esc(cap.nombre)}">
+        <span class="chapter-subtotal" data-subtotal-cap="${cap.id}">${formatCOP(cap._subtotal)}</span>
+        <button class="btn btn-icon btn-ghost" data-action="mover-capitulo-arriba" data-id="${cap.id}" title="Subir">↑</button>
+        <button class="btn btn-icon btn-ghost" data-action="mover-capitulo-abajo" data-id="${cap.id}" title="Bajar">↓</button>
+        <button class="btn btn-icon btn-danger" data-action="eliminar-capitulo" data-id="${cap.id}" title="Eliminar capítulo">🗑</button>
+      </div>
+      <div class="chapter-body ${cap.colapsado ? 'is-colapsado' : ''}">
+        ${cap.items.length === 0 ? `<p style="color:var(--ink-faint);font-size:.85rem;padding:6px 4px;">Sin ítems todavía.</p>` : `
+        <div class="table-wrap"><table>
+          <thead><tr><th>Ítem</th><th>Descripción</th><th>Und</th><th class="num">Cant.</th><th class="num">Precio unit.</th><th class="num">Total</th><th></th></tr></thead>
+          <tbody>${cap.items.map((it, i) => renderItemRow(it, codigo, i, trabajadoresCliente)).join('')}</tbody>
+        </table></div>`}
+        <div class="chapter-add-item"><button class="btn btn-sm" data-action="crear-item" data-id="${cap.id}">+ Agregar ítem</button></div>
+      </div>
+    </div>`;
+}
+
+function catalogoOpcionesPorFiltroItem(filtro) {
+  if (filtro === 'materiales') return state.catalogo.filter(c => c.estado === 'activo');
+  if (filtro === 'servicios') return state.catalogoServicios;
+  if (filtro === 'manoObra') return state.catalogoManoObra;
+  return [...state.catalogo.filter(c => c.estado === 'activo'), ...state.catalogoServicios, ...state.catalogoManoObra];
+}
+function renderItemRow(it, codigoCap, idx, trabajadoresCliente = []) {
+  const codigo = idx === 0 ? codigoCap : `${codigoCap}.${idx}`;
+  return `
+    <tr data-id="${it.id}">
+      <td class="mono">${codigo}</td>
+      <td>
+        <input class="table-input" style="min-width:220px" autocomplete="off" data-entidad="item" data-id="${it.id}" data-campo="descripcion" data-catalogo-target="item" value="${esc(it.descripcion)}" placeholder="Descripción del ítem">
+        <div class="catalogo-mini-toggle">
+          <button type="button" class="${it.catalogoFiltro === 'materiales' ? 'is-active' : ''}" data-action="item-catalogo-filtro" data-id="${it.id}" data-filtro="materiales" title="Buscar solo en el catálogo de Materiales">Mat</button>
+          <button type="button" class="${it.catalogoFiltro === 'servicios' ? 'is-active' : ''}" data-action="item-catalogo-filtro" data-id="${it.id}" data-filtro="servicios" title="Buscar solo en el catálogo de Servicios">Serv</button>
+          <button type="button" class="${it.catalogoFiltro === 'manoObra' ? 'is-active' : ''}" data-action="item-catalogo-filtro" data-id="${it.id}" data-filtro="manoObra" title="Buscar solo en el catálogo de Mano de obra">M.O.</button>
+        </div>
+        ${trabajadoresCliente.length === 0 ? '' : `
+        <div class="item-trabajador-link">
+          <span class="hint">🔗</span>
+          <select class="${it.trabajadorAsociadoId ? 'is-active' : ''}" data-item-trabajador data-id="${it.id}" title="Asociar este ítem a un trabajador de Costos de personal: le crea (o actualiza) un pago automáticamente por el mismo valor del ítem">
+            <option value="">Sin asociar a trabajador</option>
+            ${trabajadoresCliente.map(r => `<option value="${r.id}" ${it.trabajadorAsociadoId === r.id ? 'selected' : ''}>${esc(r.trabajador) || 'Sin nombre'}</option>`).join('')}
+          </select>
+        </div>`}
+      </td>
+      <td><input class="table-input w-unidad" data-entidad="item" data-id="${it.id}" data-campo="unidad" value="${esc(it.unidad)}"></td>
+      <td><input class="table-input w-num" data-entidad="item" data-id="${it.id}" data-campo="cantidad" data-numerico value="${it.cantidad}"></td>
+      <td style="text-align:right">
+        <button class="price-btn" data-action="abrir-modal-item" data-id="${it.id}">
+          <span class="price-num" data-price-item="${it.id}">${formatCOP(it._precioUnitario)}</span>${it.modoPrecio === 'apu' ? '<span class="tag-apu">APU</span>' : ''}
+        </button>
+      </td>
+      <td class="num" data-total-item="${it.id}">${formatCOP(it._total)}</td>
+      <td>
+        <div class="row-actions">
+          <button class="btn btn-icon btn-ghost" data-action="mover-item-arriba" data-id="${it.id}" title="Subir">↑</button>
+          <button class="btn btn-icon btn-ghost" data-action="mover-item-abajo" data-id="${it.id}" title="Bajar">↓</button>
+          <button class="btn btn-icon btn-danger" data-action="eliminar-item" data-id="${it.id}" title="Eliminar">🗑</button>
+        </div>
+      </td>
+    </tr>`;
+}
+
+function refrescarNumerosEditor() {
+  const p = presupuestoActivo();
+  if (!p) return;
+  p.capitulos.forEach(cap => {
+    const capEl = document.querySelector(`[data-subtotal-cap="${cap.id}"]`);
+    if (capEl) capEl.textContent = formatCOP(cap._subtotal);
+    cap.items.forEach(it => {
+      const totalEl = document.querySelector(`[data-total-item="${it.id}"]`);
+      if (totalEl) totalEl.textContent = formatCOP(it._total);
+      const priceEl = document.querySelector(`[data-price-item="${it.id}"]`);
+      if (priceEl) priceEl.textContent = formatCOP(it._precioUnitario);
+    });
+  });
+  ['subtotal', 'admin', 'imprevistos', 'utilidad', 'ivaUtilidad', 'total'].forEach(k => {
+    const el = document.querySelector(`[data-resumen="${k}"]`);
+    if (el) el.textContent = formatCOP(p._totales[k]);
+  });
+  if (ui.modalItemId) {
+    const f = encontrarItemGlobal(p, ui.modalItemId);
+    if (f && f.item.modoPrecio === 'apu') {
+      f.item.apu.recursos.forEach(r => {
+        const el = document.querySelector(`[data-total-recurso="${r.id}"]`);
+        if (el) el.textContent = formatCOP(r._total);
+      });
+      const cd = document.querySelector('[data-apu-costo-directo]');
+      if (cd) cd.textContent = formatCOP(f.item.apu._costoDirecto);
+      const pr = document.querySelector('[data-apu-precio-resultante]');
+      if (pr) pr.textContent = formatCOP(f.item.apu._precioUnitarioSugerido);
+    }
+  }
+}
+function refrescarModalPersonal() {
+  const r = registroPersonalActivo();
+  if (!r) return;
+  r.conceptos.forEach(cp => {
+    const el = document.querySelector(`[data-total-concepto-personal="${cp.id}"]`);
+    if (el) el.textContent = formatCOP(cp._total);
+  });
+  const valores = { subtotal: r._subtotal, retencion: r._retencion, totalXPagar: r._totalXPagar, totalAnticipos: r._totalAnticipos, saldo: r._saldo };
+  Object.keys(valores).forEach(k => {
+    const el = document.querySelector(`[data-personal="${k}"]`);
+    if (el) el.textContent = formatCOP(valores[k]);
+  });
+}
+
+/* ---------- modal de precio de ítem ---------- */
+function renderModalItem() {
+  const p = presupuestoActivo();
+  const f = encontrarItemGlobal(p, ui.modalItemId);
+  if (!f) return;
+  const it = f.item;
+  const modal = document.getElementById('modal-content');
+  const margenPct = Math.round((1 - (numero(it.apu.factorMargen) || 1)) * 100);
+  modal.innerHTML = `
+    <div class="modal-head">
+      <h3>${esc(it.descripcion) || 'Ítem sin descripción'}</h3>
+      <button class="btn btn-icon btn-ghost" data-action="cerrar-modal">✕</button>
+    </div>
+    <div class="modo-toggle">
+      <button class="${it.modoPrecio === 'directo' ? 'is-active' : ''}" data-action="modo-directo" data-id="${it.id}">Precio directo</button>
+      <button class="${it.modoPrecio === 'apu' ? 'is-active' : ''}" data-action="modo-apu" data-id="${it.id}">Análisis de precio unitario</button>
+    </div>
+    ${it.modoPrecio === 'directo' ? `
+      <div class="field">
+        <label>Precio unitario</label>
+        <input class="input w-num" style="width:160px" data-entidad="item" data-id="${it.id}" data-campo="precioDirecto" data-numerico value="${it.precioDirecto}">
+      </div>
+    ` : `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Tipo</th><th>Descripción</th><th>Und</th><th class="num">Cant.</th><th class="num">Precio unit.</th><th class="num">Total</th><th></th></tr></thead>
+        <tbody>${it.apu.recursos.map(renderRecursoRow).join('') || `<tr><td colspan="7" style="color:var(--ink-faint);text-align:center;padding:14px;">Sin recursos todavía.</td></tr>`}</tbody>
+      </table></div>
+      <div style="margin-top:10px;"><button class="btn btn-sm" data-action="crear-recurso" data-id="${it.id}">+ Agregar recurso</button></div>
+      <div class="apu-summary">
+        <div>Costo directo <b data-apu-costo-directo>${formatCOP(it.apu._costoDirecto)}</b></div>
+        <div class="field" style="display:inline-flex;flex-direction:row;align-items:center;gap:8px;">
+          <label style="margin:0">Factor de margen</label>
+          <input class="input w-num" style="width:70px" data-entidad="apu" data-id="${it.id}" data-campo="factorMargen" data-numerico value="${it.apu.factorMargen}">
+          <span class="hint">(≈ ${margenPct}% de margen)</span>
+        </div>
+        <div>Precio unitario resultante <b data-apu-precio-resultante>${formatCOP(it.apu._precioUnitarioSugerido)}</b></div>
+      </div>
+    `}
+    <div class="modal-foot"><button class="btn btn-primary" data-action="cerrar-modal">Listo</button></div>
+  `;
+}
+function catalogoOpcionesPorTipoRecurso(tipo) {
+  if (tipo === 'Material') return state.catalogo.filter(c => c.estado === 'activo');
+  if (tipo === 'Transporte') return state.catalogoServicios;
+  if (tipo === 'Mano de obra') return state.catalogoManoObra;
+  return [...state.catalogo.filter(c => c.estado === 'activo'), ...state.catalogoServicios, ...state.catalogoManoObra];
+}
+function renderRecursoRow(r) {
+  return `
+    <tr data-id="${r.id}">
+      <td>
+        <select class="table-input" data-entidad="recurso" data-id="${r.id}" data-campo="tipo">
+          ${TIPOS_RECURSO.map(t => `<option ${t === r.tipo ? 'selected' : ''}>${t}</option>`).join('')}
+        </select>
+      </td>
+      <td><input class="table-input" style="min-width:190px" autocomplete="off" data-entidad="recurso" data-id="${r.id}" data-campo="descripcion" data-catalogo-target="recurso" value="${esc(r.descripcion)}"></td>
+      <td><input class="table-input w-unidad" data-entidad="recurso" data-id="${r.id}" data-campo="unidad" value="${esc(r.unidad)}"></td>
+      <td><input class="table-input w-num" data-entidad="recurso" data-id="${r.id}" data-campo="cantidad" data-numerico value="${r.cantidad}"></td>
+      <td><input class="table-input w-num" data-entidad="recurso" data-id="${r.id}" data-campo="precioUnitario" data-numerico value="${r.precioUnitario}"></td>
+      <td class="num" data-total-recurso="${r.id}">${formatCOP(r._total)}</td>
+      <td><button class="btn btn-icon btn-danger" data-action="eliminar-recurso" data-id="${r.id}" title="Eliminar">🗑</button></td>
+    </tr>`;
+}
+
+/* ---------- modal de registro de costos de personal ---------- */
+function renderModalPersonal() {
+  const r = registroPersonalActivo();
+  if (!r) return;
+  const modal = document.getElementById('modal-content');
+  modal.innerHTML = `
+    <div class="modal-head">
+      <h3>${esc(r.trabajador) || 'Trabajador sin nombre'}</h3>
+      <button class="btn btn-icon btn-ghost" data-action="cerrar-modal-personal">✕</button>
+    </div>
+
+    <div class="field-grid" style="margin-bottom:18px;">
+      <div class="field"><label>Trabajador</label><input class="input" data-entidad="registroPersonal" data-id="${r.id}" data-campo="trabajador" value="${esc(r.trabajador)}" placeholder="Nombre del trabajador o proveedor"></div>
+      <div class="field"><label>Fecha</label><input type="date" class="input" data-entidad="registroPersonal" data-id="${r.id}" data-campo="fecha" value="${esc(r.fecha)}"></div>
+    </div>
+
+    <h4 class="modal-subhead">Conceptos</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Descripción</th><th>Und</th><th class="num">Cant.</th><th class="num">Precio unit.</th><th class="num">Total</th><th></th></tr></thead>
+      <tbody>${r.conceptos.map(renderFilaConceptoPersonal).join('') || `<tr><td colspan="6" style="color:var(--ink-faint);text-align:center;padding:14px;">Sin conceptos todavía.</td></tr>`}</tbody>
+    </table></div>
+    <div style="margin-top:10px;"><button class="btn btn-sm" data-action="crear-concepto-personal">+ Agregar concepto</button></div>
+
+    <div class="apu-summary">
+      <div>Subtotal <b data-personal="subtotal">${formatCOP(r._subtotal)}</b></div>
+      <div class="field" style="display:inline-flex;flex-direction:row;align-items:center;gap:8px;">
+        <label style="margin:0">Retención</label>
+        <input class="input w-num" style="width:56px" data-entidad="registroPersonal" data-id="${r.id}" data-campo="retencionPorcentaje" data-porcentaje value="${decimalAPorcentaje(r.retencionPorcentaje)}">
+        <span class="hint">% — retiene <b data-personal="retencion">${formatCOP(r._retencion)}</b></span>
+      </div>
+      <div>Total a pagar <b data-personal="totalXPagar">${formatCOP(r._totalXPagar)}</b></div>
+    </div>
+
+    <h4 class="modal-subhead" style="margin-top:22px;">Anticipos</h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Descripción</th><th class="num">Valor</th><th>Fecha</th><th></th></tr></thead>
+      <tbody>${r.anticipos.map(renderFilaAnticipoPersonal).join('') || `<tr><td colspan="4" style="color:var(--ink-faint);text-align:center;padding:14px;">Sin anticipos todavía.</td></tr>`}</tbody>
+    </table></div>
+    <div style="margin-top:10px;"><button class="btn btn-sm" data-action="crear-anticipo-personal">+ Agregar anticipo</button></div>
+
+    <div class="summary-panel" style="position:static;margin-top:18px;padding:14px 18px;">
+      <div class="summary-grid">
+        <div class="summary-item total"><span class="lbl">Saldo por pagar</span><span class="val" data-personal="saldo">${formatCOP(r._saldo)}</span></div>
+      </div>
+    </div>
+
+    <div class="modal-foot"><button class="btn btn-primary" data-action="cerrar-modal-personal">Listo</button></div>
+  `;
+}
+// Busca si un concepto de costos de personal fue creado automáticamente por un ítem de
+// presupuesto asociado — solo puede venir de un presupuesto del mismo cliente.
+function itemQueOriginaConcepto(conceptoId) {
+  const c = clienteActivo();
+  if (!c || !conceptoId) return null;
+  for (const p of state.presupuestos) {
+    if (p.clienteId !== c.id) continue;
+    for (const cap of p.capitulos) {
+      const item = cap.items.find(it => it.conceptoAsociadoId === conceptoId);
+      if (item) return { presupuesto: p, item };
+    }
+  }
+  return null;
+}
+function renderFilaConceptoPersonal(cp) {
+  const vinculo = itemQueOriginaConcepto(cp.id);
+  if (vinculo) {
+    return `
+      <tr data-id="${cp.id}">
+        <td>${esc(cp.descripcion)}<span class="hint" style="display:block;font-size:.7rem;">🔗 Vinculado al ítem del presupuesto ${esc(vinculo.presupuesto.numero)} — edítalo desde ahí</span></td>
+        <td>${esc(cp.unidad)}</td>
+        <td class="num">${formatNum(cp.cantidad)}</td>
+        <td class="num">${formatCOP(cp.precioUnitario)}</td>
+        <td class="num" data-total-concepto-personal="${cp.id}">${formatCOP(cp._total)}</td>
+        <td></td>
+      </tr>`;
+  }
+  return `
+    <tr data-id="${cp.id}">
+      <td><input class="table-input" style="min-width:190px" data-entidad="conceptoPersonal" data-id="${cp.id}" data-campo="descripcion" value="${esc(cp.descripcion)}" placeholder="Descripción"></td>
+      <td><input class="table-input w-unidad" data-entidad="conceptoPersonal" data-id="${cp.id}" data-campo="unidad" value="${esc(cp.unidad)}"></td>
+      <td><input class="table-input w-num" data-entidad="conceptoPersonal" data-id="${cp.id}" data-campo="cantidad" data-numerico value="${cp.cantidad}"></td>
+      <td><input class="table-input w-num" data-entidad="conceptoPersonal" data-id="${cp.id}" data-campo="precioUnitario" data-numerico value="${cp.precioUnitario}"></td>
+      <td class="num" data-total-concepto-personal="${cp.id}">${formatCOP(cp._total)}</td>
+      <td><button class="btn btn-icon btn-danger" data-action="eliminar-concepto-personal" data-id="${cp.id}" title="Eliminar">🗑</button></td>
+    </tr>`;
+}
+function renderFilaAnticipoPersonal(a) {
+  return `
+    <tr data-id="${a.id}">
+      <td><input class="table-input" style="min-width:170px" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="descripcion" value="${esc(a.descripcion)}" placeholder="Ej. Anticipo 1"></td>
+      <td><input class="table-input w-num" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="valor" data-numerico value="${a.valor}"></td>
+      <td><input type="date" class="table-input" style="width:135px" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="fecha" value="${esc(a.fecha)}"></td>
+      <td><button class="btn btn-icon btn-danger" data-action="eliminar-anticipo-personal" data-id="${a.id}" title="Eliminar">🗑</button></td>
+    </tr>`;
+}
+
+/* ---------- helpers de campos de formulario ---------- */
+function campoTexto(entidad, id, campo, etiqueta, valor) {
+  return `<div class="field"><label>${etiqueta}</label><input class="input" data-entidad="${entidad}" data-id="${id}" data-campo="${campo}" value="${esc(valor)}"></div>`;
+}
+function campoNumero(entidad, id, campo, etiqueta, valor) {
+  return `<div class="field"><label>${etiqueta}</label><input class="input" data-entidad="${entidad}" data-id="${id}" data-campo="${campo}" data-numerico value="${valor}"></div>`;
+}
+function campoFecha(entidad, id, campo, etiqueta, valor) {
+  return `<div class="field"><label>${etiqueta}</label><input type="date" class="input" data-entidad="${entidad}" data-id="${id}" data-campo="${campo}" value="${esc(valor)}"></div>`;
+}
+function campoSelect(entidad, id, campo, etiqueta, valor, opciones) {
+  return `<div class="field"><label>${etiqueta}</label><select class="select" data-entidad="${entidad}" data-id="${id}" data-campo="${campo}">
+    ${opciones.map(o => `<option ${o === valor ? 'selected' : ''}>${o}</option>`).join('')}
+  </select></div>`;
+}
+function campoPorcentaje(entidad, id, campo, etiqueta, valorDecimal) {
+  return `<div class="field"><label>${etiqueta}</label>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <input class="input w-num" data-entidad="${entidad}" data-id="${id}" data-campo="${campo}" data-porcentaje value="${decimalAPorcentaje(valorDecimal)}">
+      <span class="hint">%</span>
+    </div>
+  </div>`;
+}
+
+/* ============================================================
+   15. RENDER — CATÁLOGO
+   ============================================================ */
+function renderCatalogo() {
+  const cont = document.getElementById('catalogo-contenido');
+  const filtro = ui.filtroCatalogo.trim().toLowerCase();
+  const toggle = `
+    <div class="modo-toggle" style="max-width:440px;">
+      <button class="${ui.catalogoSubVista === 'materiales' ? 'is-active' : ''}" data-action="catalogo-subvista" data-subvista="materiales">Materiales</button>
+      <button class="${ui.catalogoSubVista === 'servicios' ? 'is-active' : ''}" data-action="catalogo-subvista" data-subvista="servicios">Servicios</button>
+      <button class="${ui.catalogoSubVista === 'manoObra' ? 'is-active' : ''}" data-action="catalogo-subvista" data-subvista="manoObra">Mano de obra</button>
+    </div>`;
+
+  if (ui.catalogoSubVista === 'servicios') {
+    const items = state.catalogoServicios.filter(c => !filtro || c.nombre.toLowerCase().includes(filtro));
+    cont.innerHTML = toggle + (items.length === 0 ? `<div class="empty-state"><p>${state.catalogoServicios.length === 0 ? 'Todavía no hay servicios en el catálogo.' : `Ningún servicio coincide con "${esc(ui.filtroCatalogo)}".`}</p></div>` : `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Nombre</th><th></th></tr></thead>
+        <tbody>${items.map(c => `
+        <tr data-id="${c.id}">
+          <td><input class="table-input" style="min-width:280px" data-entidad="catalogoServicio" data-id="${c.id}" data-campo="nombre" value="${esc(c.nombre)}"></td>
+          <td><button class="btn btn-icon btn-danger" data-action="eliminar-catalogo-servicio" data-id="${c.id}" title="Eliminar">🗑</button></td>
+        </tr>`).join('')}</tbody>
+      </table></div>`);
+    return;
+  }
+
+  if (ui.catalogoSubVista === 'manoObra') {
+    const items = state.catalogoManoObra.filter(c => !filtro || c.nombre.toLowerCase().includes(filtro));
+    cont.innerHTML = toggle + (items.length === 0 ? `<div class="empty-state"><p>${state.catalogoManoObra.length === 0 ? 'Todavía no hay labores en el catálogo de mano de obra.' : `Ninguna labor coincide con "${esc(ui.filtroCatalogo)}".`}</p></div>` : `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Nombre</th><th>Und</th><th class="num">Precio unitario</th><th></th></tr></thead>
+        <tbody>${items.map(c => `
+        <tr data-id="${c.id}">
+          <td><input class="table-input" style="min-width:260px" data-entidad="catalogoManoObra" data-id="${c.id}" data-campo="nombre" value="${esc(c.nombre)}"></td>
+          <td><input class="table-input w-unidad" data-entidad="catalogoManoObra" data-id="${c.id}" data-campo="unidad" value="${esc(c.unidad)}"></td>
+          <td class="num"><input class="table-input" style="text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="catalogoManoObra" data-id="${c.id}" data-campo="precio" data-numerico data-formato-cop value="${formatNum(c.precio)}"></td>
+          <td><button class="btn btn-icon btn-danger" data-action="eliminar-catalogo-mano-obra" data-id="${c.id}" title="Eliminar">🗑</button></td>
+        </tr>`).join('')}</tbody>
+      </table></div>`);
+    return;
+  }
+
+  const items = state.catalogo.filter(c => !filtro || c.nombre.toLowerCase().includes(filtro) || c.categoria.toLowerCase().includes(filtro));
+  const hoy = new Date();
+  if (items.length === 0) {
+    cont.innerHTML = toggle + `<div class="empty-state"><p>${state.catalogo.length === 0 ? 'El catálogo está vacío.' : `Ningún elemento coincide con "${esc(ui.filtroCatalogo)}".`}</p></div>`;
+    return;
+  }
+  cont.innerHTML = toggle + `<div class="table-wrap"><table>
+    <thead><tr><th>Nombre</th><th>Categoría</th><th>Und</th><th class="num">Precio habitual</th><th>Proveedor</th><th>Estado</th><th>Actualizado</th><th></th></tr></thead>
+    <tbody>${items.map(c => {
+      const dias = Math.floor((hoy - new Date(c.fechaActualizacion)) / 86400000);
+      const viejo = dias > 180;
+      return `
+      <tr data-id="${c.id}">
+        <td><input class="table-input" style="min-width:200px" data-entidad="catalogo" data-id="${c.id}" data-campo="nombre" value="${esc(c.nombre)}"></td>
+        <td><input class="table-input" style="width:140px" data-entidad="catalogo" data-id="${c.id}" data-campo="categoria" value="${esc(c.categoria)}"></td>
+        <td><input class="table-input w-unidad" data-entidad="catalogo" data-id="${c.id}" data-campo="unidad" value="${esc(c.unidad)}"></td>
+        <td class="num"><input class="table-input" style="text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="catalogo" data-id="${c.id}" data-campo="precio" data-numerico data-formato-cop value="${formatNum(c.precio)}"></td>
+        <td><input class="table-input" style="width:130px" data-entidad="catalogo" data-id="${c.id}" data-campo="proveedor" value="${esc(c.proveedor)}"></td>
+        <td><select class="table-input" data-entidad="catalogo" data-id="${c.id}" data-campo="estado">${ESTADOS_CATALOGO.map(e => `<option ${e === c.estado ? 'selected' : ''}>${e}</option>`).join('')}</select></td>
+        <td class="mono" style="font-size:.78rem;${viejo ? 'color:var(--amber)' : 'color:var(--ink-faint)'}" title="${viejo ? 'Precio con más de 6 meses sin actualizar' : ''}">${formatFechaCorta(c.fechaActualizacion)}${viejo ? ' ⚠' : ''}</td>
+        <td><button class="btn btn-icon btn-danger" data-action="eliminar-catalogo" data-id="${c.id}" title="Eliminar">🗑</button></td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
+}
+
+/* ============================================================
+   16. RENDER — VISTA DE CLIENTE / IMPRESIÓN
+   ============================================================ */
+function renderVistaCliente() {
+  const p = state.presupuestos.find(x => x.id === ui.vistaClienteId);
+  const cont = document.getElementById('vista-cliente-contenido');
+  if (!p) { cont.innerHTML = `<div class="empty-state"><p>No se encontró el presupuesto.</p></div>`; return; }
+  cont.innerHTML = `
+    <div class="doc-sheet">
+      <div class="doc-head">
+        <div style="display:flex;align-items:center;gap:14px;"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAMAAABrrFhUAAAAYFBMVEUfGRyBjkokHiAjHSB0dyt5hUV7h0ZvcmNqk0t8iEdZAACqqlUhHB7//wAA/wAceBz///9//3//AACAikhzf0IAAAAiHB56hkYkHiAiHB4hHB0jHB4iGxwiGx0jHR49AAD9sXIuAAAAIHRSTlMY/uKpB2GhCB7RAgNZAQEDAQIBvVQA/v79j27OL0+vBLl1tewAABMLSURBVHja3V2JtqM6rtUBcjKeW3Xfa4htMPz/X7YhJIEgGQ8yVDU9rFo5GfBGlrYGS1DucXUdAPYydJvfCmy7bt73/UUAvH8GoGm0VkrKvG3Nf9u8/7/+yqVUWjevt3b/IwB0T/FutJJtXVeVsF1VVedSPWHo/nIAxvs3S2/fC6/s1/im+olC95dLwLB2l4UvYaiyXDV/hAQUp+L6M/77WBTHH9cvV23lvfQ5ClUmNewKwD/X6/jOor+ekBzXJB+0zKqIxU9AqB8YdHsAcDwOAnA4fH+fz+e7+d/39+Fw6v90tWGgZc2w+CkGt24HCeif9+nwfb5/mev+uIZ/nb8P5m8/J0ryGVf/xiCNPrAAYES/OHzfX0ufXl8Gg375iBQ0smJe/QuDPIEYkACc+uWbZ3+nrq/796HXiZ/LF0mWP2JQK9gIAPNoD2d69eNuOB8GQZmsv8qqlJcBV8IGALgs/3F9FxMh6EqVdv0PCNomNQCnsvi+u11f98NUEzTp5H+KQauTAnAtT26P/wGBEYL3NtAbANBDkN/SAXAqD3ef6+t8Kt+qUG6CQC8FTSIA/i0PX3fP6/BC4FK2YsXPmTgGYvGKBwQ8ugCW+u/be/09Aq9dAJmgtJfxdFupeqe/ARMX6P+jh9hAnj+dRT8IGCwCLOQ/ZP0zBHBFaBRXY7vdIVyQ137OkxCKGYAiQP4fiuCFQIcrQpEBEfebBsCguakHCs7USHMCcA1dv7lOb2soMTYganALnxgUVJ5VmRsIQsTtA5g//9M9+Doff36silC05i+ud2REoXUUhCxqH0wB+CmKs4X3Gq9o4hUifGCiCGvszjPpF0qDW+6EgTGJ4ITtGgC0AeidPxMHOAxxAcpBMmrgtQmgQmVAeUQ1Hu/UbeUEgWKQgIIgQGb1h1MxiY99Uzzx+HN8bgKNmwLtH9cBnVcOkdQWYgH4h9gAX0Pwo48FXk/XYoiFFbinZDbB0c6JhQi6zUZmDhCoSABOqAUYPN6ymHr9vfdXHAhL8PYKFIpAFfagjBisQWD8A4gBwLi1hKfz+4jFyjB/aSYCuFewbgzJO13VBkHfDVYKYPRaWRDhwiOmMQ/T+AhuDPNgi7UabAvZBm/MClyvF3TIaInAXARIBC4xENiFwFsXgoUDfx3KwhIyRq3maYoATgeEDEdgFYIn4/YGAFmNeZyFNWj++3i2sSEbHYi4mta6D4TQIQBgJPh8LAp71gT70K9/Zncr+BEo7RbBOAdBACx3wGEe8EVjZ8tNcJyLzY0iRHEQ1IJLEbwA+FyKEebT2ocR52GhN26MhGhy27lNFWQeiuClAxB19u/qp5e20+D2kTvGCZGIDWc1tn0gssYPgOVu/jBoVOoYAe5Y/t/8TVJwaOvlpSxCICrtBcBSBdhNoE0LnBYfbDNWSuhkD3pjcPEBYLGOovzlBMBhqQQ+dAcVH4lHwGwvixAoDwn4+QRguZVJW+jAnghC1EYQohHapo5FYHwKv85WQmO7zl/r1oMgRLKMvyy6UNw8zOA9SAUgSgDnjyCSIaAzESMD8NgBxyULOjr9fIEAgIW3dAJS/PKTYxAYASisTo0VgE/7cSYelKjSIND1hlYEI5AAgILS2AyuC7UNwhGgtgC7BFCESLAkeYFUBGsIb6MDbHSg4kGAUgTC2IJufytgucnQOKmTgK3L2BOAs18wxJMH2AlRxoOAohCwIkwwwbszE/SSHXyrcpBim3ck6hBf4Oi4A9Z9AQdC1HIgcCGNgS0Ou4U3OCNEBAIsIkAWqVnSsrHxgGUwvfiMBzgRIpkWAdoYApkVcIkInRwiQm66igsBghDQMbjImODp7G8/ZSpS/JABAgHK1ERFhbFPndZ1h6RIcZdSBojogy0vsHY2Bs0LuKhOnLWlRkBZdcBv/8zQz+9iLTPkR4iYKCG5CxobAFc8N3j1zQ0WTj4EgYBgQoAIQKF8C8jg3ojAT0R22JsQZVwy4B6CC68PKFbrA/wNNhcpNgi4BgkdKkSOR6xC5IhWiPw6ls4xjColAtoVX1ipEqVrhL7uEQJAEyImUkwEoJalCbBaJvnVn40y+BTF6XRyrxILRiCPzRZYv74JrRMErzpBN+dNJiXF6NeLugupFP3qK0UPPpWibleblBSXmK1dfPm8VvhorxX+cq0VjuZsPJTQhW2lqBaPR0CnU4SfOyzJeYFY/73P7rPIALbHPhgxrFf9eJ+Z8UOgSpctQL/9w9DynRkqyqC8FhEjE+li5XM+yHZqrOC110xuAeZ1zUUAEC/HXw/8J0z+rQjwkGKsSG2mY5Ff+Tfg5Og1Sk4znBJCIjIwEwHus8NB8fw2S+cW6BURADza73d6/JQmsxlVVW0zhVNogWof4dY/4Ms00jgWaVirzzEzX8cYUABgLgSOHSRO2wcy40VArvcQuT68XlsPkf8/fEQK2INYLAigWgAQAOAGHl1k7kMXmVPJ1XSMSGxyuAWYIVAIAEYXN3MKfh2CH3gfoVNZxil/xxgZQ7YAIRrvjDlMncclBT+NnaS++05S92cnqSOsdZJiJETxJTRgkyyYlFw+EPjA+2feS2zc8uyrtyQN4/Ml0mIJYc6ah4NnC5Erru9ucj/X4vRTprjIGFm0W4A63fABwLgFY4/j8/vvHAi0tBqEhZiI7LYbAHjKLL6ERtN74PXNbzvM1qGGNbfNDexTtcCrvmj2x1zvhABFiCS/GlQzAD7eITK1FwIiBSUEcg8AkVA2kHd7rJ+mhHEIZNQeAEJLsESmm4aREMXdEbYH9ASA5d+Bg9qFPTYKgVuEUDaUXgHcX7BWl3qAHoaA5I+Vd4gdyN8ANAg6XezhVhEquFRDtii3ICfIIOBCF+2DQS5eAX7/b+pa9kixJpQAEFQRuAq1wh4bRQnDEUAKp4YkLCRQAZfZGbGwm+anhMuHPHwZUCqAr3A/DAFmStghtmV4zICmT+JYx6e+CXtsFCUMfTYNrgUBNTsxBgcJ8oe1ziH6s4Y+HEwJ6BGAz/0WE4SBOuN6bEpUnHHSFtWCgMXMIlRNwxngV4xxUlQJyAcAS0cgkAZdiJ4p1R9BCTVqBgClQaFVSspymp+VEgJLcFhkDwBaLh1oa6ocqFc4KSGyO2EAoGbSge1KpzPgjBLy3F/TAwCYZASov3qt4V/GSQm9K2pRLah7ADAdyKb+KwZKWDERIo0C0HHowAvRIYKBEHV8UcIG+w4DgGQIhynHLshBjWO4EsdLLmjECLBQQcOp/pNSwi7ODDwAWBJhb/afUe3k01JC3ye1eNRGIgExAjWHpTLJFcbGMRxpU2yz4wC0HPXOvYLFDENglDCPRwBT97XxBSI9AaJjougpBhrUCAxttgyEaLnUGjAAfKwgsf6xn1/Dd0IUGCrpFrdjbgXQiLDzXUkrVV+ZtbB5Jd0y9FcZOY0IB1Hqf5LOV4KREsa2YkKCQkYCwkPiVPBjVs6g+JqGgIhsxYQIEQKAIw0g2e8n18HnbeR8lNBDnmoMgIUznHUx7Pdz/URQI2OkhO6mYHkrZt5PYFJEOsdsiQZSjJTQGU1kuyMAtBEF7qhGIqiiYjxcoUMzpGb2URUAABWnIW6EkxJG9aST2BYIcNop9U9yvIaxDLiN6MSESUBAXpBS/yS/IQp/AhPHmQgGQGI6wPvkLqX+rdZIi7gO2HYE3LhlhwLQYGGiAPWfrRzySkkJHUXJHYDOv3PjOreTyRBw54LSSQfYACDUv4PmpPR3GxInndU9emwkucyAIADc/GPfbjY955o4MlOqom7KcABKVAJ8w7OufcxrflLsN2NrAUDtpQMo9e/ayZ7qqBlBij1LMfMl7UfNIHixf3GLjR/qwDpU7+laCwnISmczSKp/L1ve4IQoqAj2VnnPX26XtN+VCJHqz9OO6YTtpYPKtxBnSPp0K/W24yphe2l/CTCZoaU7LN2bl4eEtlTSLmp+EaEhOZqtu8NU6jMs0yd3Q2C5VgPAZT0iRHbtzsMqqfJ0zZU9o8JDgUS+AgDdt12xHg+Mn7niXyYlAMsLzMPiJPuPKKflpIQxFRKiQgGYFTOR6i/qCA8nJYywwb2w46mxy6r6i7TcScbwObhQSyVmzw6T6i9rUhyOE0InBUAhFh+QlGn7cewlic3agxJKgRVLL23D81QtVfiXsVisHShhu7SCF0ASZg8tSBY+cllsmbS1sFNqsBlqhVu0dooc3cPW83NzSvgp60MaGK0TrIEu/BO3xP0S0iEA6Jkh/DRRLipu+ueeNGzLjWiAfByawo4Uisg5jnEIyI2s4HhuECrXy32SZ2TRh9wmHPI8Ols7Frqm0NBQbUcJF/z7CYBjpa9PAD66p6jaSAfiZ4aqajPt3CUdw2dlXg/KD2RrW88Ol9BNLrC96EgJgbuHB8IDRwBg/bBHKr1kqSMTkDoa0rwaKLQi+qwHqNkF2IvajxAxq1wkKfICYFUJrNO/PBOTK8sf6fj5i5knHWBVOovfyB5eP1jOJb33o/K0sWIEYK7ha29KCAnbFY49WcDS09RHIxMAuBYgEnXAbUq/Y9pKy3rk00kbRQJAU8JLogZVT60GtqP6HrooEgCKEGXJ5m3M2+kBeerPVRPFSkDCycy4knkG38B+7NdZD8UDQFVCqzQqMJu31NSxyU8GAKijYTqFCnwRO6Abr3rRPwYAqDoyhjjpkuy/mA04j2JILwHpJjMvVeBLtYOl05QqNwaASpnFkmKwyDaQtQN+0S8eABJNZkYbB3wC8PEmX4ecCQCKEkYhgNjAetlcff7LAeeSZxfmDLmdxWn428qi/XOWvcWnCsg/+iXnvyCxX25jmqznJWMvxcnjBWweS4jEwexCX407Gib50rBTWQQkc7ZFuc6GlLAWtq+CJVJC7rp8usm64hKAKbGAhQnae/3Wycw8AiCJwSqD6Am1//rJucQBx8y0sM2Y+ZgyY372j1g/SYj83QKsnS49a0z1yb/Ln4GA4EFAiZWdBNZe2Lfc9Qd1LifX2Jwe5OzFG8MgQk8DjfXVn89dBXtvYOdqcJewuE97no44numJgFz18WClP4SrTYgLi6eazNyIVQRhrTuco1bkcoZYJzNDve7kw5pb5qh3UgAQPZkZfMfuov0x3MIRKQCgOmq6x8ql8Bq8TByRcMpOJJGA+NnU+WqzTJcTci6/lwgAqlNDKALLD4JDeySXCt5EAMTPppYrbc7BJTbrEJdNBQBVRRWGAPIpcBzVCzsB0MXPpn7fBXYqB5yG0/WK97KPBNCDCMEbAewj4Fq0pMq9AIifTT3eB0ogwNkZ17sBQDUPqv0QwDUZuDpiK9NSuJ0hJ0rohwD+CMG9cs+qdlRWT65xUpmev5jzDsnxcoykyPA3w351a9u2GL/dwAMAqHY84exFiKIjuOBletrdAKAO8Lvvq4sXAGZP/1kIdIkGEdLxgJQD4UMJUZJRjCnb2JZbpMwii4jAMzC9a+KIqmnWKQDoyMqxHREgKGGMDECAyMn90qYt+yhGsGZps4q5WCHaarfc88khZG7MjgUEZDdTSAIAVUe/JwIEJQztaABBgCc5Qhc5hi/QU4GwuYfRPSQSTGYO81SgDEVA7JZJ15xSCescvOLvo5OIEobsAgjedD0h2EsVSsF2uBWCx2jsqQiICFEIAhCheP26SZYb1JEFuIZQRiKQ/1GEyH9iNJRxCOwWJ4tOm/oBYDlgvZc1IOrI8kQAWBHIdxECPH+TpQKA7iuYugcYOd+72hYAurXY0N95Y4OoSTctHQDWI8ZGE3TbLb9pLfONu3QA2AZLmhMxW+0DkJbbaFJKgH20qtgmSmBbfkDiAnhiUk8IZLPB8m130KQGYDgfZoMgmUnst3YjK+t01wBKAmwZmicCyXzETucrs31D4tXAPmPZwDNshI734YOq10b7BsXrgV0PDRC0uuNcfafbanX5YfmKQHHVK72XTEGMYtsJjazF6mDnUJcEwjMUaxCIXEMZsReGz3WNqqv1sdZm20G5JQCXXgiy1YciWg3hiy9B55nD6s3yw5k4JGIkLwiqVjXTRTlD0Ki8Ei4jzWOWHwXAoAnWhdO8pZa66dZ/sHufOFbDo3fqclfF+WFxmgrcps4PILRKf56f7pvsfX5jo2RbOS4+fvmxAAw+suOtDijkUummWR4kN/OOGq1kXo9vdPzKKm8SVYn57ANXCEYU+nfXdd4+Dxrm5p91/fyb81cNhIvB0nIYaxdVgOAwv6rK8yuYiAbPl6jMewUxVy/7NyaexfU1G0LAsvW5AXByVphWz0iyOQEY1aFIu/rR0/wjAbg4BCxilx/KrDeSgFEZJMGAU+8lBcDVe/WV/JdH8ccD0D28uIoLg2H1Ol24Odk3a1lHg9B/PpdxUYXdAOj3gmorEQjC8LlM6uSZhsQ/AFo+QBCea6/b5+K7vxiA7uXh1m9HaM1DGNbebJZwh/SFjSMKo7eLekIPZOo2N84ydOUWT34zAOZrMT3ltFJStm3ePi/jF6s+WPKOEnRbFpqUGxa58rznrwXgtUjoVl/Z7vovvzYdRvaCt9UAAAAASUVORK5CYII=" alt="Odetta"><div class="doc-brand"><div class="doc-brand-name">Odetta</div><div class="doc-brand-sub">Arquitectura</div></div></div>
+        <div class="doc-title">
+          <div class="mono cot">Cotización ${esc(p.numero)}</div>
+          <div style="color:var(--ink-faint);font-size:.82rem">${formatFechaCorta(p.fecha)}</div>
+        </div>
+      </div>
+      <div class="doc-meta">
+        <div><span class="k">Cliente:</span> ${esc(nombreClienteDePresupuesto(p)) || '—'}</div>
+        <div><span class="k">Proyecto:</span> ${esc(p.proyecto) || '—'}</div>
+        <div><span class="k">Ubicación:</span> ${esc(p.ubicacion) || '—'}</div>
+        <div><span class="k">Validez de la propuesta:</span> ${esc(p.validezDias)} días</div>
+      </div>
+      <p class="doc-intro">Apreciados señores:<br>${esc(EMPRESA_INFO.saludo)}</p>
+
+      ${p.capitulos.map((cap, idx) => `
+        <div class="doc-chapter-title">${idx + 1}. ${esc(cap.nombre)}</div>
+        <div class="table-wrap" style="margin-top:6px;"><table>
+          <thead><tr><th>Ítem</th><th>Descripción</th><th>Und</th><th class="num">Cant.</th><th class="num">V. Unitario</th><th class="num">V. Total</th></tr></thead>
+          <tbody>${cap.items.map((it, i) => `
+            <tr>
+              <td class="mono">${i === 0 ? idx + 1 : (idx + 1) + '.' + i}</td>
+              <td>${esc(it.descripcion)}</td>
+              <td>${esc(it.unidad)}</td>
+              <td class="num">${formatNum(it.cantidad)}</td>
+              <td class="num">${formatCOP(it._precioUnitario)}</td>
+              <td class="num">${formatCOP(it._total)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>
+      `).join('') || '<p style="color:var(--ink-faint)">Este presupuesto todavía no tiene ítems.</p>'}
+
+      <div class="doc-summary">
+        <div class="row"><span>Subtotal</span><span class="mono">${formatCOP(p._totales.subtotal)}</span></div>
+        ${p.aplicaAiu !== false ? `
+        <div class="row"><span>Administración (${Math.round(p.aiu.administracion * 100)}%)</span><span class="mono">${formatCOP(p._totales.admin)}</span></div>
+        <div class="row"><span>Imprevistos (${Math.round(p.aiu.imprevistos * 100)}%)</span><span class="mono">${formatCOP(p._totales.imprevistos)}</span></div>
+        <div class="row"><span>Utilidad (${Math.round(p.aiu.utilidad * 100)}%)</span><span class="mono">${formatCOP(p._totales.utilidad)}</span></div>
+        <div class="row"><span>IVA sobre utilidad (${Math.round(p.ivaSobreUtilidad * 100)}%)</span><span class="mono">${formatCOP(p._totales.ivaUtilidad)}</span></div>
+        ` : ''}
+        <div class="row total"><span>Total</span><span class="mono">${formatCOP(p._totales.total)}</span></div>
+      </div>
+
+      <div class="doc-closing">
+        <div class="doc-closing-row">
+          <div class="doc-conditions">
+            <h4>Condiciones comerciales</h4>
+            <p>${esc(p.plazoEntrega) ? `Plazo de entrega: ${esc(p.plazoEntrega)}<br>` : ''}Validez de la propuesta: ${esc(p.validezDias)} días.${esc(p.formaPago) ? `<br>Forma de pago: ${esc(p.formaPago)}` : ''}</p>
+            ${p.observaciones ? `<h4>Observaciones</h4><p>${esc(p.observaciones).replace(/\n/g, '<br>')}</p>` : ''}
+          </div>
+
+          <div class="doc-sign">
+            <b>${esc(EMPRESA_INFO.responsable)}</b><br>
+            ${esc(EMPRESA_INFO.cargo)}<br>
+            ${esc(EMPRESA_INFO.telefono)}<br>
+            ${esc(EMPRESA_INFO.direccion)}<br>
+            ${esc(EMPRESA_INFO.ciudad)}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderVistaCostosPersonal() {
+  const c = clienteActivo();
+  const cont = document.getElementById('vista-costos-personal-contenido');
+  if (!c) { cont.innerHTML = `<div class="empty-state"><p>No se encontró el cliente.</p></div>`; return; }
+  c.manoDeObra.forEach(calcularRegistroPersonal);
+  // Si vistaCostosPersonalRegistroId trae un id, esta es una impresión individual de un solo
+  // trabajador (id no encontrado = registro borrado mientras tanto → lista vacía, no "todos").
+  const idFiltro = ui.vistaCostosPersonalRegistroId;
+  const registroUnico = idFiltro ? (c.manoDeObra.find(r => r.id === idFiltro) || null) : null;
+  const registros = idFiltro ? (registroUnico ? [registroUnico] : []) : c.manoDeObra;
+  const totalAPagar = registros.reduce((s, r) => s + r._totalXPagar, 0);
+  const totalAnticipado = registros.reduce((s, r) => s + r._totalAnticipos, 0);
+  const totalPendiente = registros.reduce((s, r) => s + r._saldo, 0);
+  cont.innerHTML = `
+    <div class="doc-sheet">
+      <div class="doc-head">
+        <div style="display:flex;align-items:center;gap:14px;"><img src="data:image/png;base64,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" alt="Odetta"><div class="doc-brand"><div class="doc-brand-name">Odetta</div><div class="doc-brand-sub">Arquitectura</div></div></div>
+        <div class="doc-title">
+          <div class="mono cot">${registroUnico ? 'Costo de personal — ' + (esc(registroUnico.trabajador) || 'Sin nombre') : 'Costos de personal'}</div>
+          <div style="color:var(--ink-faint);font-size:.82rem">${formatFechaCorta(hoyISO())}</div>
+        </div>
+      </div>
+      <div class="doc-meta">
+        <div><span class="k">Cliente:</span> ${esc(c.nombre) || '—'}</div>
+        ${c.personaContacto ? `<div><span class="k">Persona de contacto:</span> ${esc(c.personaContacto)}</div>` : ''}
+      </div>
+
+      ${registros.length === 0 ? `<p style="color:var(--ink-faint)">${idFiltro ? 'No se encontró el registro.' : 'Todavía no hay registros de costos de personal.'}</p>` : registros.map(r => `
+        <div class="doc-chapter-title">${esc(r.trabajador) || 'Sin nombre'} <span style="font-weight:400;font-size:.8em;color:var(--ink-faint)">— ${formatFechaCorta(r.fecha)}</span></div>
+        <div class="table-wrap" style="margin-top:6px;"><table>
+          <thead><tr><th>Concepto</th><th>Und</th><th class="num">Cant.</th><th class="num">V. Unitario</th><th class="num">V. Total</th></tr></thead>
+          <tbody>${r.conceptos.map(cp => `
+            <tr>
+              <td>${esc(cp.descripcion)}</td>
+              <td>${esc(cp.unidad)}</td>
+              <td class="num">${formatNum(cp.cantidad)}</td>
+              <td class="num">${formatCOP(cp.precioUnitario)}</td>
+              <td class="num">${formatCOP(cp._total)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>
+        <div class="doc-summary" style="margin-top:6px;">
+          <div class="row"><span>Subtotal</span><span class="mono">${formatCOP(r._subtotal)}</span></div>
+          <div class="row"><span>Retención (${Math.round(r.retencionPorcentaje * 100)}%)</span><span class="mono">${formatCOP(r._retencion)}</span></div>
+          <div class="row total"><span>Total a pagar</span><span class="mono">${formatCOP(r._totalXPagar)}</span></div>
+        </div>
+        ${r.anticipos.length === 0 ? '' : `
+        <div style="margin-top:10px;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;font-weight:700;color:var(--ink-faint)">Anticipos</div>
+        <div class="table-wrap" style="margin-top:4px;"><table>
+          <thead><tr><th>Descripción</th><th class="num">Valor</th><th>Fecha</th></tr></thead>
+          <tbody>${r.anticipos.map(a => `
+            <tr><td>${esc(a.descripcion)}</td><td class="num">${formatCOP(a.valor)}</td><td class="mono">${formatFechaCorta(a.fecha)}</td></tr>`).join('')}
+          </tbody>
+        </table></div>`}
+        <div class="doc-summary" style="margin-top:6px;">
+          <div class="row total"><span>Saldo por pagar</span><span class="mono">${formatCOP(r._saldo)}</span></div>
+        </div>
+      `).join('')}
+
+      ${registroUnico || registros.length === 0 ? '' : `
+      <div class="doc-summary" style="margin-top:22px;">
+        <div class="row"><span>Total a pagar (todos)</span><span class="mono">${formatCOP(totalAPagar)}</span></div>
+        <div class="row"><span>Anticipado (todos)</span><span class="mono">${formatCOP(totalAnticipado)}</span></div>
+        <div class="row total"><span>Saldo pendiente (todos)</span><span class="mono">${formatCOP(totalPendiente)}</span></div>
+      </div>
+      `}
+
+      <div class="doc-closing">
+        <div class="doc-closing-row">
+          <div class="doc-sign">
+            <b>${esc(EMPRESA_INFO.responsable)}</b><br>
+            ${esc(EMPRESA_INFO.cargo)}<br>
+            ${esc(EMPRESA_INFO.telefono)}<br>
+            ${esc(EMPRESA_INFO.direccion)}<br>
+            ${esc(EMPRESA_INFO.ciudad)}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/* ============================================================
+   16B. RENDER — CLIENTES
+   ============================================================ */
+function renderListadoClientes() {
+  const cont = document.getElementById('listado-clientes-contenido');
+  const filtro = ui.filtroClientes.trim().toLowerCase();
+  const items = state.clientes.filter(c =>
+    !filtro || c.nombre.toLowerCase().includes(filtro) || c.telefono.toLowerCase().includes(filtro) || c.correo.toLowerCase().includes(filtro)
+  );
+  if (state.clientes.length === 0) {
+    cont.innerHTML = `<div class="empty-state">
+      <h3>Todavía no hay clientes</h3>
+      <p>Agrega tu primer cliente para empezar a cotizarle y llevar los costos de personal de su proyecto.</p>
+      <button class="btn btn-primary" data-action="crear-cliente">+ Nuevo cliente</button>
+    </div>`;
+    return;
+  }
+  if (items.length === 0) {
+    cont.innerHTML = `<div class="empty-state"><p>Ningún cliente coincide con "${esc(ui.filtroClientes)}".</p></div>`;
+    return;
+  }
+  cont.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Nombre</th><th>Teléfono</th><th>Correo</th><th class="num">Presupuestos</th><th class="num">Costos de personal pendientes</th><th></th></tr></thead>
+    <tbody>${items.map(c => {
+      c.manoDeObra.forEach(calcularRegistroPersonal);
+      const pendiente = c.manoDeObra.reduce((s, r) => s + r._saldo, 0);
+      const numPresupuestos = state.presupuestos.filter(p => p.clienteId === c.id).length;
+      return `
+      <tr>
+        <td><b>${esc(c.nombre)}</b></td>
+        <td>${esc(c.telefono) || '—'}</td>
+        <td>${esc(c.correo) || '—'}</td>
+        <td class="num">${numPresupuestos}</td>
+        <td class="num">${pendiente > 0 ? formatCOP(pendiente) : '—'}</td>
+        <td>
+          <div class="row-actions">
+            <button class="btn btn-sm" data-action="abrir-cliente" data-id="${c.id}">Abrir</button>
+            <button class="btn btn-sm btn-danger" data-action="eliminar-cliente" data-id="${c.id}" title="Eliminar">🗑</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
+}
+
+function renderEditorCliente() {
+  const c = clienteActivo();
+  const cont = document.getElementById('editor-cliente-contenido');
+  if (!c) { cont.innerHTML = `<div class="empty-state"><p>Selecciona un cliente desde el listado.</p></div>`; return; }
+  const presDelCliente = state.presupuestos.filter(p => p.clienteId === c.id);
+  c.manoDeObra.forEach(calcularRegistroPersonal);
+  const totalAPagar = c.manoDeObra.reduce((s, r) => s + r._totalXPagar, 0);
+  const totalAnticipado = c.manoDeObra.reduce((s, r) => s + r._totalAnticipos, 0);
+  const totalPendiente = c.manoDeObra.reduce((s, r) => s + r._saldo, 0);
+
+  cont.innerHTML = `
+    <div class="editor-topbar">
+      <div class="info"><h1>${esc(c.nombre) || 'Cliente'}</h1></div>
+      <button class="btn" data-action="ir-vista" data-vista="listado-clientes">← Listado</button>
+    </div>
+
+    <div class="editor-section">
+      <h2>Datos del cliente</h2>
+      <div class="card" style="padding:18px 20px;">
+        <div class="field-grid">
+          ${campoTexto('cliente', c.id, 'nombre', 'Nombre', c.nombre)}
+          ${campoTexto('cliente', c.id, 'telefono', 'Teléfono', c.telefono)}
+          ${campoTexto('cliente', c.id, 'correo', 'Correo', c.correo)}
+          ${campoTexto('cliente', c.id, 'direccion', 'Dirección', c.direccion)}
+        </div>
+        <div class="field" style="margin-top:14px;max-width:360px;">
+          <label>Nombre de persona de contacto</label>
+          <input class="input" data-entidad="cliente" data-id="${c.id}" data-campo="personaContacto" value="${esc(c.personaContacto)}">
+        </div>
+        <div class="field" style="margin-top:14px;">
+          <label>Observaciones</label>
+          <textarea class="textarea" data-entidad="cliente" data-id="${c.id}" data-campo="observaciones">${esc(c.observaciones)}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="editor-section">
+      <div class="section-head">
+        <div class="modo-toggle" style="margin-bottom:0;">
+          <button class="${ui.clienteSubVista === 'presupuestos' ? 'is-active' : ''}" data-action="cliente-subvista" data-subvista="presupuestos">Presupuestos</button>
+          <button class="${ui.clienteSubVista === 'costosPersonal' ? 'is-active' : ''}" data-action="cliente-subvista" data-subvista="costosPersonal">Costos de personal</button>
+        </div>
+        ${ui.clienteSubVista === 'presupuestos'
+          ? `<button class="btn btn-primary btn-sm" data-action="crear-presupuesto">+ Nuevo presupuesto</button>`
+          : `<div style="display:flex;gap:8px;">
+              <button class="btn btn-sm" data-action="ir-vista" data-vista="vista-costos-personal">🖨 Imprimir</button>
+              <button class="btn btn-primary btn-sm" data-action="crear-mano-obra">+ Agregar registro</button>
+            </div>`}
+      </div>
+
+      ${ui.clienteSubVista === 'presupuestos' ? `
+        ${presDelCliente.length === 0 ? `<p style="color:var(--ink-faint);font-size:.9rem;">Todavía no tiene presupuestos. Crea el primero para empezar a cotizarle.</p>` : `
+        <div class="table-wrap"><table>
+          <thead><tr><th>Número</th><th>Proyecto</th><th>Fecha</th><th>Estado</th><th class="num">Total</th><th></th></tr></thead>
+          <tbody>${presDelCliente.map(p => `
+            <tr>
+              <td class="mono">${esc(p.numero)}</td>
+              <td>${esc(p.proyecto)}</td>
+              <td class="mono">${formatFechaCorta(p.fecha)}</td>
+              <td><span class="badge badge-${p.estado.toLowerCase()}">${p.estado}</span></td>
+              <td class="num">${formatCOP(p._totales.total)}</td>
+              <td>
+                <div class="row-actions">
+                  <button class="btn btn-sm" data-action="abrir-presupuesto" data-id="${p.id}">Abrir</button>
+                  <button class="btn btn-sm btn-ghost" data-action="duplicar-presupuesto" data-id="${p.id}" title="Duplicar">⧉</button>
+                  <button class="btn btn-sm btn-danger" data-action="eliminar-presupuesto" data-id="${p.id}" title="Eliminar">🗑</button>
+                </div>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>`}
+      ` : `
+        <p style="color:var(--ink-soft);font-size:.88rem;margin-bottom:14px;max-width:60ch;">
+          Cada trabajador o proveedor puede tener varios conceptos (como en un presupuesto), retención y anticipos — aparte del presupuesto del cliente.
+        </p>
+        ${c.manoDeObra.length === 0 ? `<p style="color:var(--ink-faint);font-size:.9rem;">Sin registros todavía.</p>` : `
+        <div class="table-wrap"><table>
+          <thead><tr><th>Trabajador</th><th>Fecha</th><th class="num">Total a pagar</th><th class="num">Anticipado</th><th class="num">Saldo</th><th></th></tr></thead>
+          <tbody>${c.manoDeObra.map(renderFilaRegistroPersonal).join('')}</tbody>
+        </table></div>`}
+
+        <div class="summary-panel" style="position:static;margin-top:16px;">
+          <div class="summary-grid">
+            <div class="summary-item"><span class="lbl">Total a pagar</span><span class="val">${formatCOP(totalAPagar)}</span></div>
+            <div class="summary-item"><span class="lbl">Anticipado</span><span class="val">${formatCOP(totalAnticipado)}</span></div>
+            <div class="summary-item total"><span class="lbl">Saldo pendiente</span><span class="val">${formatCOP(totalPendiente)}</span></div>
+          </div>
+        </div>
+      `}
+    </div>
+  `;
+}
+function renderFilaRegistroPersonal(r) {
+  return `
+    <tr data-id="${r.id}" style="${r._saldo <= 0 ? 'opacity:.6' : ''}">
+      <td><b>${esc(r.trabajador) || 'Sin nombre'}</b></td>
+      <td class="mono">${formatFechaCorta(r.fecha)}</td>
+      <td class="num">${formatCOP(r._totalXPagar)}</td>
+      <td class="num">${formatCOP(r._totalAnticipos)}</td>
+      <td class="num">${formatCOP(r._saldo)}</td>
+      <td>
+        <div class="row-actions">
+          <button class="btn btn-sm" data-action="abrir-modal-personal" data-id="${r.id}">Abrir</button>
+          <button class="btn btn-sm" data-action="imprimir-registro-personal" data-id="${r.id}" title="Imprimir solo este registro">🖨</button>
+          <button class="btn btn-sm btn-danger" data-action="eliminar-mano-obra" data-id="${r.id}" title="Eliminar">🗑</button>
+        </div>
+      </td>
+    </tr>`;
+}
+
+/* ============================================================
+   16C. COMBOBOX DE CATÁLOGO (reemplaza el <datalist> nativo)
+   ============================================================ */
+let _comboboxInputActivo = null;
+const COMBOBOX_LIMITE = 12;
+
+function opcionesParaCombobox(el) {
+  const objetivo = el.dataset.catalogoTarget;
+  const p = presupuestoActivo();
+  if (!p) return [];
+  if (objetivo === 'item') {
+    const f = encontrarItemGlobal(p, el.dataset.id);
+    return f ? catalogoOpcionesPorFiltroItem(f.item.catalogoFiltro) : [];
+  }
+  if (objetivo === 'recurso') {
+    const f = encontrarItemGlobal(p, ui.modalItemId);
+    if (!f) return [];
+    const r = encontrarRecurso(f.item, el.dataset.id);
+    return r ? catalogoOpcionesPorTipoRecurso(r.tipo) : [];
+  }
+  return [];
+}
+function resaltarCoincidencia(texto, consulta) {
+  const t = String(texto || '');
+  const q = String(consulta || '').trim();
+  if (!q) return esc(t);
+  const idx = t.toLowerCase().indexOf(q.toLowerCase());
+  if (idx === -1) return esc(t);
+  return esc(t.slice(0, idx)) + '<mark>' + esc(t.slice(idx, idx + q.length)) + '</mark>' + esc(t.slice(idx + q.length));
+}
+function abrirCombobox(el) {
+  _comboboxInputActivo = el;
+  refrescarCombobox();
+}
+function refrescarCombobox() {
+  const el = _comboboxInputActivo;
+  if (!el) return;
+  const panel = document.getElementById('combobox-panel');
+  const consulta = el.value.trim().toLowerCase();
+  const opciones = opcionesParaCombobox(el);
+  const filtradas = (consulta ? opciones.filter(o => o.nombre.toLowerCase().includes(consulta)) : opciones).slice(0, COMBOBOX_LIMITE);
+  panel.innerHTML = filtradas.length === 0
+    ? `<div class="combobox-vacio">Sin coincidencias</div>`
+    : filtradas.map(o => `<div class="combobox-opcion" data-action="elegir-combobox" data-nombre="${esc(o.nombre)}">${resaltarCoincidencia(o.nombre, el.value)}</div>`).join('');
+  const rect = el.getBoundingClientRect();
+  panel.style.left = Math.round(rect.left) + 'px';
+  panel.style.top = Math.round(rect.bottom + 4) + 'px';
+  panel.style.width = Math.max(rect.width, 220) + 'px';
+  panel.style.display = 'block';
+}
+function cerrarCombobox() {
+  _comboboxInputActivo = null;
+  const panel = document.getElementById('combobox-panel');
+  panel.style.display = 'none';
+  panel.innerHTML = '';
+}
+function elegirOpcionCombobox(nombre) {
+  const el = _comboboxInputActivo;
+  if (!el) return;
+  const hit = buscarEnCatalogos(nombre);
+  if (hit) {
+    const objetivo = el.dataset.catalogoTarget;
+    if (objetivo === 'item') aplicarCatalogoAItem(el.dataset.id, hit);
+    else if (objetivo === 'recurso') aplicarCatalogoAResurso(el.dataset.id, hit);
+    recalcularActivo();
+    guardar();
+  }
+  cerrarCombobox();
+  if (ui.modalItemId) renderModalItem();
+  renderEditor();
+}
+
+/* ============================================================
+   17. DELEGACIÓN DE EVENTOS
+   ============================================================ */
+document.body.addEventListener('click', e => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const accion = btn.dataset.action;
+  const id = btn.dataset.id;
+
+  const acciones = {
+    'ir-vista': () => mostrarVista(btn.dataset.vista),
+    'crear-presupuesto': () => crearPresupuesto(),
+    'abrir-presupuesto': () => abrirPresupuesto(id),
+    'duplicar-presupuesto': () => duplicarPresupuesto(id),
+    'eliminar-presupuesto': () => eliminarPresupuesto(id),
+    'ver-cliente': () => mostrarVista('vista-cliente', { presupuestoId: id }),
+    'volver-editor': () => mostrarVista('editor-presupuesto'),
+    'volver-a-cliente': () => { if (id) { ui.clienteActivoId = id; mostrarVista('editor-cliente'); } else { mostrarVista('listado-clientes'); } },
+    'imprimir': () => window.print(),
+    'crear-capitulo': () => crearCapitulo(),
+    'capitulos-sugeridos': () => usarCapitulosSugeridos(),
+    'eliminar-capitulo': () => eliminarCapitulo(id),
+    'mover-capitulo-arriba': () => moverCapitulo(id, -1),
+    'mover-capitulo-abajo': () => moverCapitulo(id, 1),
+    'toggle-capitulo': () => toggleColapsoCapitulo(id),
+    'crear-item': () => crearItem(id),
+    'eliminar-item': () => eliminarItem(id),
+    'mover-item-arriba': () => moverItem(id, -1),
+    'mover-item-abajo': () => moverItem(id, 1),
+    'item-catalogo-filtro': () => alternarCatalogoFiltroItem(id, btn.dataset.filtro),
+    'abrir-modal-item': () => abrirModalItem(id),
+    'cerrar-modal': () => cerrarModalItem(),
+    'cerrar-modal-overlay': () => { if (e.target.id === 'modal-overlay') { if (ui.modalPersonalId) cerrarModalPersonal(); else cerrarModalItem(); } },
+    'modo-directo': () => cambiarModoPrecio(id, 'directo'),
+    'modo-apu': () => cambiarModoPrecio(id, 'apu'),
+    'crear-recurso': () => crearRecurso(id),
+    'eliminar-recurso': () => eliminarRecurso(id),
+    'crear-catalogo': () => {
+      if (ui.catalogoSubVista === 'servicios') crearElementoCatalogoServicio();
+      else if (ui.catalogoSubVista === 'manoObra') crearElementoCatalogoManoObra();
+      else crearElementoCatalogo();
+    },
+    'eliminar-catalogo': () => eliminarElementoCatalogo(id),
+    'catalogo-subvista': () => {
+      ui.catalogoSubVista = btn.dataset.subvista;
+      ui.filtroCatalogo = '';
+      const filtroEl = document.getElementById('catalogo-filtro');
+      if (filtroEl) filtroEl.value = '';
+      renderCatalogo();
+    },
+    'eliminar-catalogo-servicio': () => eliminarElementoCatalogoServicio(id),
+    'eliminar-catalogo-mano-obra': () => eliminarElementoCatalogoManoObra(id),
+    'crear-cliente': () => crearCliente(),
+    'abrir-cliente': () => abrirCliente(id),
+    'eliminar-cliente': () => eliminarCliente(id),
+    'cliente-subvista': () => { ui.clienteSubVista = btn.dataset.subvista; renderEditorCliente(); },
+    'crear-mano-obra': () => crearRegistroManoObra(),
+    'eliminar-mano-obra': () => eliminarRegistroManoObra(id),
+    'imprimir-registro-personal': () => mostrarVista('vista-costos-personal', { registroId: id }),
+    'abrir-modal-personal': () => abrirModalPersonal(id),
+    'cerrar-modal-personal': () => cerrarModalPersonal(),
+    'crear-concepto-personal': () => crearConceptoPersonal(),
+    'eliminar-concepto-personal': () => eliminarConceptoPersonal(id),
+    'crear-anticipo-personal': () => crearAnticipoPersonal(),
+    'eliminar-anticipo-personal': () => eliminarAnticipoPersonal(id),
+    'elegir-combobox': () => elegirOpcionCombobox(btn.dataset.nombre),
+    'cerrar-sesion': () => cerrarSesion()
+  };
+  if (acciones[accion]) { acciones[accion](); }
+});
+
+document.body.addEventListener('input', e => {
+  const el = e.target;
+  if (el.type === 'checkbox') return; // los checkboxes se resuelven en 'change', con .checked
+  if (el.id === 'catalogo-filtro') { ui.filtroCatalogo = el.value; renderCatalogo(); return; }
+  if (el.id === 'clientes-filtro') { ui.filtroClientes = el.value; renderListadoClientes(); return; }
+
+  const entidad = el.dataset.entidad;
+  const campo = el.dataset.campo;
+  if (!entidad || !campo) return;
+  const id = el.dataset.id;
+  const valor = el.dataset.numerico !== undefined ? numero(el.value)
+    : el.dataset.porcentaje !== undefined ? numero(el.value) / 100
+    : el.value;
+  aplicarCampo(entidad, id, campo, valor);
+  marcarGuardando();
+
+  if (el.dataset.catalogoTarget && _comboboxInputActivo === el) refrescarCombobox();
+
+  if (entidad === 'catalogo' || entidad === 'catalogoServicio' || entidad === 'catalogoManoObra') {
+    guardarDebounced();
+    return;
+  }
+  if (entidad === 'cliente') { guardarDebounced(); return; }
+  if (entidad === 'registroPersonal') {
+    if (campo === 'retencionPorcentaje') { recalcularRegistroPersonalActivo(); refrescarModalPersonal(); }
+    guardarDebounced();
+    return;
+  }
+  if (entidad === 'conceptoPersonal' || entidad === 'anticipoPersonal') {
+    recalcularRegistroPersonalActivo();
+    refrescarModalPersonal();
+    guardarDebounced();
+    return;
+  }
+  recalcularActivo();
+  refrescarNumerosEditor();
+  guardarDebounced();
+});
+
+document.body.addEventListener('change', e => {
+  const el = e.target;
+
+  if (el.type === 'checkbox') {
+    const entidad = el.dataset.entidad, campo = el.dataset.campo, id = el.dataset.id;
+    if (entidad === 'presupuesto' && campo === 'aplicaAiu') {
+      aplicarCampo('presupuesto', id, campo, el.checked);
+      recalcularActivo();
+      guardar();
+      renderEditor();
+    }
+    return;
+  }
+
+  if (el.dataset.catalogoTarget) {
+    const hit = buscarEnCatalogos(el.value);
+    if (hit) {
+      const objetivo = el.dataset.catalogoTarget;
+      if (objetivo === 'item') aplicarCatalogoAItem(el.dataset.id, hit);
+      else if (objetivo === 'recurso') aplicarCatalogoAResurso(el.dataset.id, hit);
+      recalcularActivo();
+      guardar();
+      if (ui.modalItemId) renderModalItem();
+      renderEditor();
+    }
+    return;
+  }
+
+  if (el.dataset.itemTrabajador !== undefined) {
+    asociarItemATrabajador(el.dataset.id, el.value);
+    return;
+  }
+
+  if (el.tagName === 'SELECT') {
+    const entidad = el.dataset.entidad, campo = el.dataset.campo, id = el.dataset.id;
+    if (!entidad || !campo) return;
+    aplicarCampo(entidad, id, campo, el.value);
+    guardar();
+    if (entidad === 'presupuesto') renderEditor();
+    else if (entidad === 'recurso') { if (campo === 'tipo') renderModalItem(); }
+    else if (entidad === 'catalogo') renderCatalogo();
+    return;
+  }
+});
+
+// Piso del 5% para la utilidad del A.I.U.: se valida al salir del campo (focusout, que sí burbujea,
+// a diferencia de blur) para no pisar lo que el usuario está escribiendo a mitad de tecleo.
+document.body.addEventListener('focusout', e => {
+  const el = e.target;
+  if (el.dataset.entidad === 'aiu' && el.dataset.campo === 'utilidad') {
+    const p = presupuestoActivo();
+    if (p && numero(p.aiu.utilidad) < 0.05) {
+      p.aiu.utilidad = 0.05;
+      recalcularActivo();
+      renderEditor();
+      guardarDebounced();
+    }
+  }
+  // Precios del catálogo con formato de pesos: al salir del campo se vuelve a mostrar formateado
+  // ("33.500"), mientras que mientras se edita se ve el número crudo (ver el focusin de abajo).
+  if (el.dataset.formatoCop !== undefined) el.value = formatNum(leerCampoCOP(el));
+  if (el === _comboboxInputActivo) cerrarCombobox();
+});
+
+// Combobox de catálogo: se abre al enfocar el campo, se cierra al salir. Un click dentro del panel
+// hace mousedown con preventDefault (más abajo) para que el input nunca pierda el foco al elegir
+// una opción — si lo perdiera, este mismo focusout cerraría el panel antes de que el click llegue.
+document.body.addEventListener('focusin', e => {
+  if (e.target.dataset.catalogoTarget) abrirCombobox(e.target);
+  if (e.target.dataset.formatoCop !== undefined) e.target.value = leerCampoCOP(e.target);
+});
+// Si el campo ya tenía el foco (p.ej. el panel se cerró y el usuario le vuelve a hacer clic sin que
+// el foco realmente cambie, caso en el que 'focusin' no se dispara de nuevo), esto lo vuelve a abrir.
+document.body.addEventListener('click', e => {
+  if (e.target.dataset.catalogoTarget && _comboboxInputActivo !== e.target) abrirCombobox(e.target);
+});
+document.body.addEventListener('mousedown', e => {
+  if (e.target.closest('#combobox-panel')) e.preventDefault();
+});
+document.body.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && _comboboxInputActivo) cerrarCombobox();
+});
+// Solo cierra si lo que se desplazó fue la página/un contenedor de afuera — el scroll interno del
+// panel (para ver más sugerencias) no debe cerrarlo; antes cualquier scroll lo cerraba, incluido
+// el del propio panel, lo que lo tumbaba apenas se intentaba bajar por la lista.
+window.addEventListener('scroll', e => {
+  if (!_comboboxInputActivo) return;
+  const panel = document.getElementById('combobox-panel');
+  if (panel && (e.target === panel || panel.contains(e.target))) return;
+  cerrarCombobox();
+}, true);
+
+/* ============================================================
+   18. AUTENTICACIÓN
+   ============================================================ */
+function mostrarPantallaLogin(mensajeError) {
+  document.body.classList.remove('mostrando-app');
+  document.body.classList.add('mostrando-login');
+  const err = document.getElementById('login-error');
+  if (mensajeError) { err.textContent = mensajeError; err.style.display = 'block'; }
+  else { err.style.display = 'none'; err.textContent = ''; }
+  const campoCorreo = document.getElementById('login-correo');
+  if (campoCorreo) campoCorreo.focus();
+}
+
+function renderHeaderUsuario() {
+  const cont = document.getElementById('header-usuario');
+  if (!cont || !ui.usuarioActual) return;
+  cont.innerHTML = `
+    <span class="nombre">${esc(ui.usuarioActual.nombre)}</span>
+    <span class="badge-rol">${esc(ui.usuarioActual.rol)}</span>
+    <button type="button" data-action="cerrar-sesion">Salir</button>
+  `;
+}
+
+async function cerrarSesion() {
+  await sb.auth.signOut();
+  location.reload();
+}
+
+// Ya con sesión válida (recién iniciada, o ya existente al recargar la página): trae el perfil
+// (para saber el rol), carga los datos reales desde Supabase, y recién ahí muestra la app.
+async function continuarConSesion(session) {
+  const { data: perfil, error } = await sb.from('profiles').select('nombre, rol').eq('id', session.user.id).maybeSingle();
+  if (error || !perfil) {
+    mostrarPantallaLogin('No se pudo cargar tu perfil. Contacta a un administrador.');
+    return;
+  }
+  ui.usuarioActual = { id: session.user.id, email: session.user.email, nombre: perfil.nombre || session.user.email, rol: perfil.rol };
+  try {
+    await cargar();
+  } catch (e) {
+    console.error(e);
+    document.body.classList.remove('mostrando-login', 'mostrando-app');
+    const cargando = document.getElementById('pantalla-cargando');
+    if (cargando) cargando.textContent = 'No se pudo cargar la información. Revisa tu conexión y recarga la página.';
+    return;
+  }
+  renderHeaderUsuario();
+  document.body.classList.remove('mostrando-login');
+  document.body.classList.add('mostrando-app');
+  restaurarUltimaVista();
+}
+
+async function iniciarApp() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { mostrarPantallaLogin(); return; }
+  await continuarConSesion(session);
+}
+
+document.getElementById('form-login').addEventListener('submit', async e => {
+  e.preventDefault();
+  const correo = document.getElementById('login-correo').value.trim();
+  const clave = document.getElementById('login-clave').value;
+  const boton = document.getElementById('login-submit');
+  const err = document.getElementById('login-error');
+  err.style.display = 'none';
+  boton.disabled = true;
+  boton.textContent = 'Entrando…';
+  const { data, error } = await sb.auth.signInWithPassword({ email: correo, password: clave });
+  boton.disabled = false;
+  boton.textContent = 'Entrar';
+  if (error) {
+    err.textContent = 'Correo o contraseña incorrectos.';
+    err.style.display = 'block';
+    return;
+  }
+  document.body.classList.remove('mostrando-login');
+  await continuarConSesion(data.session);
+});
+
+/* ============================================================
+   19. INIT
+   ============================================================ */
+iniciarApp();
+</script>
+</body>
+</html>
