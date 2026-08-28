@@ -2418,7 +2418,7 @@ function elegirOpcionCombobox(nombre) {
 async function cargarUsuariosAdmin() {
   ui.adminCargandoUsuarios = true;
   if (ui.vista === 'admin') renderVistaAdmin();
-  const { data, error } = await sb.from('profiles').select('id, nombre, rol, created_at').order('created_at');
+  const { data, error } = await sb.from('profiles').select('id, nombre, email, rol, created_at').order('created_at');
   ui.adminUsuarios = error ? [] : (data || []);
   ui.adminCargandoUsuarios = false;
   if (ui.vista === 'admin') renderVistaAdmin();
@@ -2576,13 +2576,14 @@ function renderAdminUsuarios() {
       <button class="btn btn-primary btn-sm" data-action="abrir-modal-nuevo-usuario">+ Nuevo usuario</button>
     </div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Nombre</th><th>Rol</th><th>Creado</th></tr></thead>
+      <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Creado</th></tr></thead>
       <tbody>${ui.adminUsuarios.map(u => `
         <tr>
           <td>
             <input class="table-input" style="font-weight:600;min-width:140px;" data-nombre-usuario-id="${u.id}" value="${esc(u.nombre)}" placeholder="Sin nombre">
             ${u.id === ui.usuarioActual.id ? '<span class="hint">(tú)</span>' : ''}
           </td>
+          <td class="mono">${esc(u.email) || '—'}</td>
           <td>
             <select class="select" style="width:auto;" data-rol-usuario-id="${u.id}" ${u.id === ui.usuarioActual.id ? 'disabled title="No puedes cambiar tu propio rol desde aquí"' : ''}>
               <option value="usuario" ${u.rol === 'usuario' ? 'selected' : ''}>Usuario</option>
