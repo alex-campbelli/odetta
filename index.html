@@ -244,6 +244,9 @@ th.num{ text-align:right; }
   border:none; cursor:pointer; font-size:.7rem; font-weight:700; text-transform:uppercase;
   letter-spacing:.04em; padding:5px 22px 5px 10px; border-radius:999px;
 }
+.badge-auditoria-crear{ background:var(--green-soft); color:var(--green); }
+.badge-auditoria-modificar{ background:var(--amber-soft); color:var(--amber); }
+.badge-auditoria-eliminar{ background:var(--coral-soft); color:var(--coral); }
 
 /* combobox de catálogo (reemplaza el <datalist> nativo del navegador) */
 .combobox-panel{
@@ -645,7 +648,11 @@ const ui = {
   modalEditarUsuarioError: null,
   modalEditarUsuarioEnviando: false,
   confirmacion: null,
-  aviso: null
+  aviso: null,
+  adminAuditoria: [],
+  adminCargandoAuditoria: false,
+  adminAuditoriaFiltroTabla: '',
+  adminAuditoriaFiltroUsuario: ''
 };
 
 /* ============================================================
@@ -2740,13 +2747,138 @@ async function guardarEdicionUsuario() {
   renderVistaAdmin();
 }
 
+// ---------- Generador de ZIP mínimo (sin librerías externas) ----------
+// Solo el método STORE (sin comprimir) — el formato ZIP en sí no cambia, un archivo STORE es
+// tan válido y abrible como uno comprimido, solo pesa más. Se evita así implementar DEFLATE a
+// mano (mucho más riesgoso de tener mal) solo para un botón de respaldo de texto JSON, que de
+// por sí no pesa mucho para el volumen de datos de esta app.
+const CRC32_TABLA = (() => {
+  const tabla = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    tabla[n] = c >>> 0;
+  }
+  return tabla;
+})();
+function crc32(bytes) {
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) crc = CRC32_TABLA[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+// archivos: [{ ruta:'carpeta/archivo.json', contenido:'texto...' }, ...] -> Blob de un .zip real
+function crearZip(archivos) {
+  const encoder = new TextEncoder();
+  const partesLocales = [];
+  const partesCentral = [];
+  let offset = 0;
+  const ahora = new Date();
+  const dosFecha = ((ahora.getFullYear() - 1980) << 9) | ((ahora.getMonth() + 1) << 5) | ahora.getDate();
+  const dosHora = (ahora.getHours() << 11) | (ahora.getMinutes() << 5) | (ahora.getSeconds() >> 1);
+
+  archivos.forEach(({ ruta, contenido }) => {
+    const datos = encoder.encode(contenido);
+    const nombre = encoder.encode(ruta);
+    const crc = crc32(datos);
+
+    const local = new Uint8Array(30 + nombre.length);
+    const vLocal = new DataView(local.buffer);
+    vLocal.setUint32(0, 0x04034b50, true);
+    vLocal.setUint16(4, 20, true);
+    vLocal.setUint16(6, 0, true);
+    vLocal.setUint16(8, 0, true); // método 0 = STORE
+    vLocal.setUint16(10, dosHora, true);
+    vLocal.setUint16(12, dosFecha, true);
+    vLocal.setUint32(14, crc, true);
+    vLocal.setUint32(18, datos.length, true);
+    vLocal.setUint32(22, datos.length, true);
+    vLocal.setUint16(26, nombre.length, true);
+    vLocal.setUint16(28, 0, true);
+    local.set(nombre, 30);
+    partesLocales.push(local, datos);
+
+    const central = new Uint8Array(46 + nombre.length);
+    const vCentral = new DataView(central.buffer);
+    vCentral.setUint32(0, 0x02014b50, true);
+    vCentral.setUint16(4, 20, true);
+    vCentral.setUint16(6, 20, true);
+    vCentral.setUint16(8, 0, true);
+    vCentral.setUint16(10, 0, true);
+    vCentral.setUint16(12, dosHora, true);
+    vCentral.setUint16(14, dosFecha, true);
+    vCentral.setUint32(16, crc, true);
+    vCentral.setUint32(20, datos.length, true);
+    vCentral.setUint32(24, datos.length, true);
+    vCentral.setUint16(28, nombre.length, true);
+    vCentral.setUint16(30, 0, true);
+    vCentral.setUint16(32, 0, true);
+    vCentral.setUint16(34, 0, true);
+    vCentral.setUint16(36, 0, true);
+    vCentral.setUint32(38, 0, true);
+    vCentral.setUint32(42, offset, true);
+    central.set(nombre, 46);
+    partesCentral.push(central);
+
+    offset += local.length + datos.length;
+  });
+
+  const inicioCentral = offset;
+  const tamCentral = partesCentral.reduce((s, p) => s + p.length, 0);
+  const fin = new Uint8Array(22);
+  const vFin = new DataView(fin.buffer);
+  vFin.setUint32(0, 0x06054b50, true);
+  vFin.setUint16(4, 0, true);
+  vFin.setUint16(6, 0, true);
+  vFin.setUint16(8, archivos.length, true);
+  vFin.setUint16(10, archivos.length, true);
+  vFin.setUint32(12, tamCentral, true);
+  vFin.setUint32(16, inicioCentral, true);
+  vFin.setUint16(20, 0, true);
+
+  return new Blob([...partesLocales, ...partesCentral, fin], { type: 'application/zip' });
+}
+// Convierte un texto libre (p.ej. el nombre de un cliente) en algo seguro para usar como nombre
+// de archivo dentro del zip: sin tildes, sin espacios, sin caracteres raros.
+function slugArchivo(texto, maxLen) {
+  const s = String(texto || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return (s || 'sin-nombre').slice(0, maxLen || 40);
+}
+
 function descargarCopiaSeguridad() {
-  const datos = { exportadoEn: new Date().toISOString(), ...clonarProfundo(state) };
-  const blob = new Blob([JSON.stringify(datos, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
+  const archivos = [];
+  const usadas = new Set();
+  const rutaUnica = (ruta) => {
+    let final = ruta, i = 2;
+    while (usadas.has(final)) { final = ruta.replace(/\.json$/, `-${i}.json`); i++; }
+    usadas.add(final);
+    return final;
+  };
+  const agregar = (ruta, datos) => archivos.push({ ruta: rutaUnica(ruta), contenido: JSON.stringify(datos, null, 2) });
+
+  state.clientes.forEach(c => agregar(`clientes/${slugArchivo(c.nombre)}-${c.id.slice(-6)}.json`, c));
+  state.presupuestos.forEach(p => agregar(`presupuestos/${slugArchivo(p.numero || p.id)}.json`, p));
+  agregar('catalogo/materiales.json', state.catalogo);
+  agregar('catalogo/servicios.json', state.catalogoServicios);
+  agregar('catalogo/mano-de-obra.json', state.catalogoManoObra);
+  agregar('configuracion/empresa.json', state.empresa);
+  agregar('resumen.json', {
+    exportadoEn: new Date().toISOString(),
+    totalClientes: state.clientes.length,
+    totalPresupuestos: state.presupuestos.length,
+    totalMateriales: state.catalogo.length,
+    totalServicios: state.catalogoServicios.length,
+    totalManoDeObra: state.catalogoManoObra.length
+  });
+
+  const zip = crearZip(archivos);
+  const url = URL.createObjectURL(zip);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `odetta-copia-seguridad-${hoyISO()}.json`;
+  a.download = `odetta-copia-seguridad-${hoyISO()}.zip`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -2840,17 +2972,122 @@ async function enviarNuevoUsuario() {
   await cargarUsuariosAdmin();
 }
 
+/* ---------- Auditoría: quién hizo qué, solo lectura, solo admin ---------- */
+// El registro en sí lo llena un trigger en la base de datos (ver agregar-auditoria.sql), nunca
+// código de esta app — así queda un rastro que ni un bug ni una mala intención en el navegador
+// pueden evitar. Aquí solo se lee y se muestra.
+const AUDITORIA_TABLAS = {
+  clientes: { etiqueta: 'Cliente', campo: 'nombre' },
+  presupuestos: { etiqueta: 'Presupuesto', campo: 'numero' },
+  capitulos: { etiqueta: 'Capítulo', campo: 'nombre' },
+  items: { etiqueta: 'Ítem', campo: 'descripcion' },
+  recursos_apu: { etiqueta: 'Recurso de APU', campo: 'descripcion' },
+  registros_personal: { etiqueta: 'Registro de personal', campo: 'trabajador' },
+  conceptos_personal: { etiqueta: 'Concepto de personal', campo: 'descripcion' },
+  anticipos_personal: { etiqueta: 'Anticipo de personal', campo: 'descripcion' },
+  catalogo_materiales: { etiqueta: 'Catálogo · Material', campo: 'nombre' },
+  catalogo_servicios: { etiqueta: 'Catálogo · Servicio', campo: 'nombre' },
+  catalogo_mano_obra: { etiqueta: 'Catálogo · Mano de obra', campo: 'nombre' },
+  profiles: { etiqueta: 'Usuario', campo: 'nombre' },
+  empresa_config: { etiqueta: 'Configuración de empresa', campo: null }
+};
+function etiquetaTablaAuditoria(tabla) {
+  return (AUDITORIA_TABLAS[tabla] && AUDITORIA_TABLAS[tabla].etiqueta) || tabla;
+}
+function formatValorAuditoria(v) {
+  if (v === null || v === undefined) return '—';
+  if (typeof v === 'boolean') return v ? 'sí' : 'no';
+  if (typeof v === 'number') return String(v);
+  const s = String(v);
+  return s.length > 30 ? s.slice(0, 30) + '…' : s;
+}
+function formatFechaHoraAuditoria(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const fecha = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  const hora = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return `${fecha} ${hora}`;
+}
+// Arma una descripción legible del movimiento: para crear/eliminar usa el campo identificador de
+// esa tabla (el nombre del cliente, el número del presupuesto...); para modificar, compara
+// datos_anteriores contra datos_nuevos y solo lista los campos que de verdad cambiaron.
+function resumenCambiosAuditoria(entrada) {
+  const info = AUDITORIA_TABLAS[entrada.tabla] || { etiqueta: entrada.tabla, campo: null };
+  if (entrada.operacion === 'INSERT') {
+    const nombre = info.campo && entrada.datos_nuevos ? entrada.datos_nuevos[info.campo] : null;
+    return `Creó ${info.etiqueta.toLowerCase()}${nombre ? ` "${nombre}"` : ''}`;
+  }
+  if (entrada.operacion === 'DELETE') {
+    const nombre = info.campo && entrada.datos_anteriores ? entrada.datos_anteriores[info.campo] : null;
+    return `Eliminó ${info.etiqueta.toLowerCase()}${nombre ? ` "${nombre}"` : ''}`;
+  }
+  const antes = entrada.datos_anteriores || {};
+  const despues = entrada.datos_nuevos || {};
+  const campos = Object.keys(despues).filter(k => k !== 'id' && JSON.stringify(antes[k]) !== JSON.stringify(despues[k]));
+  if (campos.length === 0) return `Modificó ${info.etiqueta.toLowerCase()}`;
+  return campos.slice(0, 4).map(k => `${k}: ${formatValorAuditoria(antes[k])} → ${formatValorAuditoria(despues[k])}`).join(' · ')
+    + (campos.length > 4 ? ` (+${campos.length - 4} más)` : '');
+}
+async function cargarAuditoria() {
+  ui.adminCargandoAuditoria = true;
+  if (ui.vista === 'admin' && ui.adminSubVista === 'auditoria') renderVistaAdmin();
+  const { data, error } = await sb.from('audit_log')
+    .select('id, tabla, operacion, fila_id, datos_anteriores, datos_nuevos, creado_en, profiles(nombre)')
+    .order('creado_en', { ascending: false })
+    .limit(300);
+  ui.adminAuditoria = error ? [] : (data || []);
+  ui.adminCargandoAuditoria = false;
+  if (ui.vista === 'admin' && ui.adminSubVista === 'auditoria') renderVistaAdmin();
+}
+function renderAdminAuditoria() {
+  if (ui.adminCargandoAuditoria) return `<p style="color:var(--ink-faint);font-size:.9rem;">Cargando auditoría…</p>`;
+  const tablasPresentes = [...new Set(ui.adminAuditoria.map(a => a.tabla))].sort();
+  const usuariosPresentes = [...new Set(ui.adminAuditoria.map(a => a.profiles ? a.profiles.nombre : null).filter(Boolean))].sort();
+  const filtradas = ui.adminAuditoria.filter(a =>
+    (!ui.adminAuditoriaFiltroTabla || a.tabla === ui.adminAuditoriaFiltroTabla) &&
+    (!ui.adminAuditoriaFiltroUsuario || (a.profiles && a.profiles.nombre === ui.adminAuditoriaFiltroUsuario))
+  );
+  return `
+    <div class="toolbar" style="margin-bottom:12px;align-items:center;">
+      <select class="select" style="width:auto;" id="auditoria-filtro-tabla">
+        <option value="">Todas las áreas</option>
+        ${tablasPresentes.map(t => `<option value="${esc(t)}" ${t === ui.adminAuditoriaFiltroTabla ? 'selected' : ''}>${esc(etiquetaTablaAuditoria(t))}</option>`).join('')}
+      </select>
+      <select class="select" style="width:auto;" id="auditoria-filtro-usuario">
+        <option value="">Todos los usuarios</option>
+        ${usuariosPresentes.map(u => `<option value="${esc(u)}" ${u === ui.adminAuditoriaFiltroUsuario ? 'selected' : ''}>${esc(u)}</option>`).join('')}
+      </select>
+      <span class="hint">Últimos ${ui.adminAuditoria.length} movimientos${filtradas.length !== ui.adminAuditoria.length ? ` · ${filtradas.length} con este filtro` : ''}</span>
+    </div>
+    ${filtradas.length === 0 ? `<p style="color:var(--ink-faint);font-size:.9rem;">Sin movimientos${ui.adminAuditoria.length ? ' con ese filtro.' : ' todavía.'}</p>` : `
+    <div class="table-wrap"><table>
+      <thead><tr><th>Cuándo</th><th>Quién</th><th>Área</th><th>Acción</th><th>Detalle</th></tr></thead>
+      <tbody>${filtradas.map(a => `
+        <tr>
+          <td class="mono" style="white-space:nowrap;">${formatFechaHoraAuditoria(a.creado_en)}</td>
+          <td>${esc(a.profiles ? a.profiles.nombre : 'Desconocido')}</td>
+          <td>${esc(etiquetaTablaAuditoria(a.tabla))}</td>
+          <td><span class="badge badge-auditoria-${a.operacion === 'INSERT' ? 'crear' : a.operacion === 'DELETE' ? 'eliminar' : 'modificar'}">${a.operacion === 'INSERT' ? 'Creó' : a.operacion === 'DELETE' ? 'Eliminó' : 'Modificó'}</span></td>
+          <td style="font-size:.82rem;color:var(--ink-soft);">${esc(resumenCambiosAuditoria(a))}</td>
+        </tr>`).join('')}</tbody>
+    </table></div>`}
+  `;
+}
+
 function renderVistaAdmin() {
   const cont = document.getElementById('admin-contenido');
   if (!cont) return;
   cont.innerHTML = `
-    <div class="modo-toggle" style="max-width:600px;">
+    <div class="modo-toggle" style="max-width:680px;">
       <button class="${ui.adminSubVista === 'usuarios' ? 'is-active' : ''}" data-action="admin-subvista" data-subvista="usuarios">Usuarios</button>
+      <button class="${ui.adminSubVista === 'auditoria' ? 'is-active' : ''}" data-action="admin-subvista" data-subvista="auditoria">Auditoría</button>
       <button class="${ui.adminSubVista === 'backup' ? 'is-active' : ''}" data-action="admin-subvista" data-subvista="backup">Copia de seguridad</button>
       <button class="${ui.adminSubVista === 'config' ? 'is-active' : ''}" data-action="admin-subvista" data-subvista="config">Ajustes</button>
       <button class="${ui.adminSubVista === 'instrucciones' ? 'is-active' : ''}" data-action="admin-subvista" data-subvista="instrucciones">Instrucciones</button>
     </div>
     ${ui.adminSubVista === 'usuarios' ? renderAdminUsuarios()
+      : ui.adminSubVista === 'auditoria' ? renderAdminAuditoria()
       : ui.adminSubVista === 'backup' ? renderAdminBackup()
       : ui.adminSubVista === 'config' ? renderAdminConfig()
       : renderAdminInstrucciones()}
@@ -2869,7 +3106,7 @@ function renderAdminInstrucciones() {
       </p>
       <h2 style="font-size:1rem;margin-bottom:8px;">Roles actuales</h2>
       <p style="color:var(--ink-soft);margin-bottom:6px;"><b>Usuario</b> — acceso normal: clientes, presupuestos, catálogo y costos de personal.</p>
-      <p style="color:var(--ink-soft);margin-bottom:20px;"><b>Admin</b> — todo lo anterior, más crear usuarios y cambiarles el rol, descargar copias de seguridad manuales, y editar la configuración general de la empresa (AIU, IVA y margen por defecto).</p>
+      <p style="color:var(--ink-soft);margin-bottom:20px;"><b>Admin</b> — todo lo anterior, más crear usuarios y cambiarles el rol, ver la auditoría de quién hizo qué, descargar copias de seguridad manuales, y editar la configuración general de la empresa (AIU, IVA y margen por defecto).</p>
       <h2 style="font-size:1rem;margin-bottom:8px;">¿Necesitas un rol nuevo o un permiso distinto?</h2>
       <p style="color:var(--ink-soft);">
         Los roles se pueden ampliar más adelante según lo necesite el equipo. Si hace falta uno nuevo, coméntaselo a quien administra el sistema.
@@ -2904,7 +3141,7 @@ function renderAdminBackup() {
     <div class="card" style="padding:22px 24px;max-width:560px;">
       <h2 style="font-size:1rem;margin-bottom:8px;">Copia de seguridad</h2>
       <p style="color:var(--ink-soft);font-size:.88rem;margin-bottom:18px;">
-        Descarga toda la información actual (clientes, presupuestos, catálogo y costos de personal) en un archivo JSON, como respaldo aparte del que ya mantiene Supabase.
+        Descarga toda la información actual (clientes, presupuestos, catálogo y configuración) en un archivo .zip organizado por carpetas, como respaldo aparte del que ya mantiene Supabase.
       </p>
       <button class="btn btn-primary" data-action="descargar-backup">⭳ Descargar copia de seguridad</button>
     </div>
@@ -3009,6 +3246,7 @@ document.body.addEventListener('click', e => {
       ui.adminSubVista = btn.dataset.subvista;
       renderVistaAdmin();
       if (ui.adminSubVista === 'usuarios') cargarUsuariosAdmin();
+      else if (ui.adminSubVista === 'auditoria') cargarAuditoria();
     },
     'abrir-modal-nuevo-usuario': () => abrirModalNuevoUsuario(),
     'cerrar-modal-usuario': () => cerrarModalNuevoUsuario(),
@@ -3112,6 +3350,9 @@ document.body.addEventListener('change', e => {
     cambiarEstadoPresupuesto(el.dataset.estadoPresupuestoId, el.value);
     return;
   }
+
+  if (el.id === 'auditoria-filtro-tabla') { ui.adminAuditoriaFiltroTabla = el.value; renderVistaAdmin(); return; }
+  if (el.id === 'auditoria-filtro-usuario') { ui.adminAuditoriaFiltroUsuario = el.value; renderVistaAdmin(); return; }
 
   if (el.tagName === 'SELECT') {
     const entidad = el.dataset.entidad, campo = el.dataset.campo, id = el.dataset.id;
