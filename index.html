@@ -3084,7 +3084,11 @@ function resumenCambiosAuditoria(entrada, mapaTrabajadores) {
     }
     partes.push(`${etiquetaCampoAuditoria(campo)}: ${formatValorAuditoria(antes[campo])} → ${formatValorAuditoria(despues[campo])}`);
   });
-  if (partes.length === 0) return `Modificó ${info.etiqueta.toLowerCase()}`;
+  // null (no un texto genérico "Modificó X"): esta fila SÍ es un cambio real en la base de datos
+  // (p.ej. tocar el filtro de catálogo de un ítem al buscar un material también llama guardar()),
+  // pero lo único que cambió es un campo técnico ya oculto — mostrar la fila igual solo confundiría
+  // ("Modificó ítem" sin decir qué). renderAdminAuditoria() descarta las filas que dan null.
+  if (partes.length === 0) return null;
   return partes.slice(0, 4).join(' · ') + (partes.length > 4 ? ` (+${partes.length - 4} más)` : '');
 }
 async function cargarAuditoria() {
@@ -3102,11 +3106,19 @@ function renderAdminAuditoria() {
   if (ui.adminCargandoAuditoria) return `<p style="color:var(--ink-faint);font-size:.9rem;">Cargando auditoría…</p>`;
   const mapaTrabajadores = new Map();
   state.clientes.forEach(c => c.manoDeObra.forEach(r => mapaTrabajadores.set(r.id, r.trabajador)));
-  const tablasPresentes = [...new Set(ui.adminAuditoria.map(a => a.tabla))].sort();
-  const usuariosPresentes = [...new Set(ui.adminAuditoria.map(a => a.profiles ? a.profiles.nombre : null).filter(Boolean))].sort();
-  const filtradas = ui.adminAuditoria.filter(a =>
-    (!ui.adminAuditoriaFiltroTabla || a.tabla === ui.adminAuditoriaFiltroTabla) &&
-    (!ui.adminAuditoriaFiltroUsuario || (a.profiles && a.profiles.nombre === ui.adminAuditoriaFiltroUsuario))
+  // Cada fila de audit_log es un cambio real en la base de datos, pero no todo cambio real es
+  // interesante para quien revisa (p.ej. tocar el filtro "Mat/Serv/M.O." del buscador de catálogo
+  // de un ítem también llama guardar()). resumenCambiosAuditoria() da null cuando lo único que
+  // cambió es un campo técnico ya oculto — esas filas se descartan aquí mismo, antes de armar los
+  // filtros y el conteo, para que la vista solo hable de cambios reales de negocio.
+  const significativas = ui.adminAuditoria
+    .map(a => ({ entrada: a, resumen: resumenCambiosAuditoria(a, mapaTrabajadores) }))
+    .filter(x => x.resumen !== null);
+  const tablasPresentes = [...new Set(significativas.map(x => x.entrada.tabla))].sort();
+  const usuariosPresentes = [...new Set(significativas.map(x => x.entrada.profiles ? x.entrada.profiles.nombre : null).filter(Boolean))].sort();
+  const filtradas = significativas.filter(x =>
+    (!ui.adminAuditoriaFiltroTabla || x.entrada.tabla === ui.adminAuditoriaFiltroTabla) &&
+    (!ui.adminAuditoriaFiltroUsuario || (x.entrada.profiles && x.entrada.profiles.nombre === ui.adminAuditoriaFiltroUsuario))
   );
   return `
     <div class="toolbar" style="margin-bottom:12px;align-items:center;">
@@ -3118,19 +3130,19 @@ function renderAdminAuditoria() {
         <option value="">Todos los usuarios</option>
         ${usuariosPresentes.map(u => `<option value="${esc(u)}" ${u === ui.adminAuditoriaFiltroUsuario ? 'selected' : ''}>${esc(u)}</option>`).join('')}
       </select>
-      <span class="hint">Últimos ${ui.adminAuditoria.length} movimientos${filtradas.length !== ui.adminAuditoria.length ? ` · ${filtradas.length} con este filtro` : ''}</span>
+      <span class="hint">Últimos ${significativas.length} movimientos${filtradas.length !== significativas.length ? ` · ${filtradas.length} con este filtro` : ''}</span>
     </div>
-    ${filtradas.length === 0 ? `<p style="color:var(--ink-faint);font-size:.9rem;">Sin movimientos${ui.adminAuditoria.length ? ' con ese filtro.' : ' todavía.'}</p>` : `
+    ${filtradas.length === 0 ? `<p style="color:var(--ink-faint);font-size:.9rem;">Sin movimientos${significativas.length ? ' con ese filtro.' : ' todavía.'}</p>` : `
     <div class="table-wrap"><table>
       <thead><tr><th>Cuándo</th><th>Quién</th><th>Área</th><th>Acción</th><th style="width:100%;">Detalle</th></tr></thead>
-      <tbody>${filtradas.map(a => `
+      <tbody>${filtradas.map(x => { const a = x.entrada; return `
         <tr>
           <td class="mono" style="white-space:nowrap;">${formatFechaHoraAuditoria(a.creado_en)}</td>
           <td style="white-space:nowrap;">${esc(a.profiles ? a.profiles.nombre : 'Desconocido')}</td>
           <td style="white-space:nowrap;">${esc(etiquetaTablaAuditoria(a.tabla))}</td>
           <td style="white-space:nowrap;"><span class="badge badge-auditoria-${a.operacion === 'INSERT' ? 'crear' : a.operacion === 'DELETE' ? 'eliminar' : 'modificar'}">${a.operacion === 'INSERT' ? 'Creó' : a.operacion === 'DELETE' ? 'Eliminó' : 'Modificó'}</span></td>
-          <td style="font-size:.82rem;color:var(--ink-soft);">${esc(resumenCambiosAuditoria(a, mapaTrabajadores))}</td>
-        </tr>`).join('')}</tbody>
+          <td style="font-size:.82rem;color:var(--ink-soft);">${esc(x.resumen)}</td>
+        </tr>`; }).join('')}</tbody>
     </table></div>`}
   `;
 }
