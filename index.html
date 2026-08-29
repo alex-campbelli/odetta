@@ -444,6 +444,10 @@ body.mostrando-app #contenedor-app{ display:contents; }
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
       <span>Catálogo</span>
     </button>
+    <button class="nav-tab solo-admin" data-action="ir-vista" data-vista="auditoria">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+      <span>Auditoría</span>
+    </button>
   </nav>
   <img class="sidebar-watermark" src="data:image/png;base64,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" alt="" aria-hidden="true">
   <div class="sidebar-usuario" id="sidebar-usuario"></div>
@@ -500,6 +504,17 @@ body.mostrando-app #contenedor-app{ display:contents; }
       <input class="input search-input" id="catalogo-filtro" placeholder="Buscar por nombre…" data-action-input="filtroCatalogo">
     </div>
     <div id="catalogo-contenido"></div>
+  </section>
+
+  <!-- ================= VISTA: AUDITORÍA ================= -->
+  <section data-view="auditoria">
+    <div class="view-head">
+      <div>
+        <h1>Auditoría</h1>
+        <div class="sub">Quién hizo qué y cuándo, en toda la información de la app.</div>
+      </div>
+    </div>
+    <div id="auditoria-contenido"></div>
   </section>
 
   <!-- ================= VISTA: CLIENTE / IMPRESIÓN ================= -->
@@ -1681,6 +1696,7 @@ function mostrarVista(nombre, params) {
   else if (nombre === 'dashboard') renderVistaDashboard();
   else if (nombre === 'editor-cliente') renderEditorCliente();
   else if (nombre === 'admin') { renderVistaAdmin(); cargarUsuariosAdmin(); }
+  else if (nombre === 'auditoria') { renderVistaAuditoria(); cargarAuditoria(); }
 }
 function restaurarUltimaVista() {
   let uv = null;
@@ -1696,7 +1712,7 @@ function restaurarUltimaVista() {
   if (uv.vista === 'editor-presupuesto' && !state.presupuestos.find(p => p.id === ui.presupuestoActivoId)) { mostrarVista('dashboard'); return; }
   if (uv.vista === 'vista-cliente' && !state.presupuestos.find(p => p.id === ui.vistaClienteId)) { mostrarVista('dashboard'); return; }
   if (uv.vista === 'vista-costos-personal') { mostrarVista(uv.vista, { registroId: uv.vistaCostosPersonalRegistroId }); return; }
-  if (uv.vista === 'admin' && (!ui.usuarioActual || ui.usuarioActual.rol !== 'admin')) { mostrarVista('dashboard'); return; }
+  if ((uv.vista === 'admin' || uv.vista === 'auditoria') && (!ui.usuarioActual || ui.usuarioActual.rol !== 'admin')) { mostrarVista('dashboard'); return; }
   mostrarVista(uv.vista);
 }
 
@@ -2994,8 +3010,34 @@ const AUDITORIA_TABLAS = {
 function etiquetaTablaAuditoria(tabla) {
   return (AUDITORIA_TABLAS[tabla] && AUDITORIA_TABLAS[tabla].etiqueta) || tabla;
 }
+// Campos puramente técnicos/de UI (orden en la lista, si un capítulo está colapsado, el filtro
+// interno del combobox de catálogo) — cambian solos todo el tiempo y no le dicen nada útil a
+// alguien revisando qué se modificó de verdad, así que no se muestran en el detalle.
+const AUDITORIA_CAMPOS_OCULTOS = new Set(['catalogo_filtro', 'orden', 'colapsado']);
+// Estos dos campos guardan el id interno de otro registro (p.ej. "cp_mtehht9p_1") — mostrar ese
+// id tal cual no le dice nada a un humano, así que se muestra una frase en su lugar.
+const AUDITORIA_CAMPOS_ESPECIALES = {
+  concepto_asociado_id: (antes, despues) => despues ? 'Se vinculó a un concepto de costos de personal' : 'Se desvinculó de un concepto de costos de personal',
+  trabajador_asociado_id: (antes, despues) => despues ? 'Se vinculó a un trabajador' : 'Se desvinculó de un trabajador'
+};
+const AUDITORIA_ETIQUETAS_CAMPO = {
+  nombre: 'Nombre', descripcion: 'Descripción', unidad: 'Unidad', cantidad: 'Cantidad',
+  precio: 'Precio', precio_directo: 'Precio directo', precio_unitario: 'Precio unitario',
+  estado: 'Estado', numero: 'Número', proyecto: 'Proyecto', ubicacion: 'Ubicación',
+  fecha: 'Fecha', telefono: 'Teléfono', correo: 'Correo', email: 'Correo',
+  direccion: 'Dirección', observaciones: 'Observaciones', proveedor: 'Proveedor',
+  trabajador: 'Trabajador', retencion_porcentaje: 'Retención', valor: 'Valor',
+  rol: 'Rol', cargo: 'Cargo', activo: 'Activo', validez_dias: 'Validez (días)',
+  plazo_entrega: 'Plazo de entrega', forma_pago: 'Forma de pago', aplica_aiu: 'Aplica A.I.U.',
+  persona_contacto: 'Persona de contacto', aiu_administracion: 'Administración (A.I.U.)',
+  aiu_imprevistos: 'Imprevistos (A.I.U.)', aiu_utilidad: 'Utilidad (A.I.U.)',
+  iva_sobre_utilidad: 'IVA sobre utilidad', apu_factor_margen: 'Factor de margen'
+};
+function etiquetaCampoAuditoria(campo) {
+  return AUDITORIA_ETIQUETAS_CAMPO[campo] || campo;
+}
 function formatValorAuditoria(v) {
-  if (v === null || v === undefined) return '—';
+  if (v === null || v === undefined || v === '') return '—';
   if (typeof v === 'boolean') return v ? 'sí' : 'no';
   if (typeof v === 'number') return String(v);
   const s = String(v);
@@ -3024,21 +3066,26 @@ function resumenCambiosAuditoria(entrada) {
   }
   const antes = entrada.datos_anteriores || {};
   const despues = entrada.datos_nuevos || {};
-  const campos = Object.keys(despues).filter(k => k !== 'id' && JSON.stringify(antes[k]) !== JSON.stringify(despues[k]));
-  if (campos.length === 0) return `Modificó ${info.etiqueta.toLowerCase()}`;
-  return campos.slice(0, 4).map(k => `${k}: ${formatValorAuditoria(antes[k])} → ${formatValorAuditoria(despues[k])}`).join(' · ')
-    + (campos.length > 4 ? ` (+${campos.length - 4} más)` : '');
+  const partes = [];
+  Object.keys(despues).forEach(campo => {
+    if (campo === 'id' || AUDITORIA_CAMPOS_OCULTOS.has(campo)) return;
+    if (JSON.stringify(antes[campo]) === JSON.stringify(despues[campo])) return;
+    if (AUDITORIA_CAMPOS_ESPECIALES[campo]) { partes.push(AUDITORIA_CAMPOS_ESPECIALES[campo](antes[campo], despues[campo])); return; }
+    partes.push(`${etiquetaCampoAuditoria(campo)}: ${formatValorAuditoria(antes[campo])} → ${formatValorAuditoria(despues[campo])}`);
+  });
+  if (partes.length === 0) return `Modificó ${info.etiqueta.toLowerCase()}`;
+  return partes.slice(0, 4).join(' · ') + (partes.length > 4 ? ` (+${partes.length - 4} más)` : '');
 }
 async function cargarAuditoria() {
   ui.adminCargandoAuditoria = true;
-  if (ui.vista === 'admin' && ui.adminSubVista === 'auditoria') renderVistaAdmin();
+  if (ui.vista === 'auditoria') renderVistaAuditoria();
   const { data, error } = await sb.from('audit_log')
     .select('id, tabla, operacion, fila_id, datos_anteriores, datos_nuevos, creado_en, profiles(nombre)')
     .order('creado_en', { ascending: false })
     .limit(300);
   ui.adminAuditoria = error ? [] : (data || []);
   ui.adminCargandoAuditoria = false;
-  if (ui.vista === 'admin' && ui.adminSubVista === 'auditoria') renderVistaAdmin();
+  if (ui.vista === 'auditoria') renderVistaAuditoria();
 }
 function renderAdminAuditoria() {
   if (ui.adminCargandoAuditoria) return `<p style="color:var(--ink-faint);font-size:.9rem;">Cargando auditoría…</p>`;
@@ -3074,20 +3121,22 @@ function renderAdminAuditoria() {
     </table></div>`}
   `;
 }
+function renderVistaAuditoria() {
+  const cont = document.getElementById('auditoria-contenido');
+  if (cont) cont.innerHTML = renderAdminAuditoria();
+}
 
 function renderVistaAdmin() {
   const cont = document.getElementById('admin-contenido');
   if (!cont) return;
   cont.innerHTML = `
-    <div class="modo-toggle" style="max-width:680px;">
+    <div class="modo-toggle" style="max-width:600px;">
       <button class="${ui.adminSubVista === 'usuarios' ? 'is-active' : ''}" data-action="admin-subvista" data-subvista="usuarios">Usuarios</button>
-      <button class="${ui.adminSubVista === 'auditoria' ? 'is-active' : ''}" data-action="admin-subvista" data-subvista="auditoria">Auditoría</button>
       <button class="${ui.adminSubVista === 'backup' ? 'is-active' : ''}" data-action="admin-subvista" data-subvista="backup">Copia de seguridad</button>
       <button class="${ui.adminSubVista === 'config' ? 'is-active' : ''}" data-action="admin-subvista" data-subvista="config">Ajustes</button>
       <button class="${ui.adminSubVista === 'instrucciones' ? 'is-active' : ''}" data-action="admin-subvista" data-subvista="instrucciones">Instrucciones</button>
     </div>
     ${ui.adminSubVista === 'usuarios' ? renderAdminUsuarios()
-      : ui.adminSubVista === 'auditoria' ? renderAdminAuditoria()
       : ui.adminSubVista === 'backup' ? renderAdminBackup()
       : ui.adminSubVista === 'config' ? renderAdminConfig()
       : renderAdminInstrucciones()}
@@ -3246,7 +3295,6 @@ document.body.addEventListener('click', e => {
       ui.adminSubVista = btn.dataset.subvista;
       renderVistaAdmin();
       if (ui.adminSubVista === 'usuarios') cargarUsuariosAdmin();
-      else if (ui.adminSubVista === 'auditoria') cargarAuditoria();
     },
     'abrir-modal-nuevo-usuario': () => abrirModalNuevoUsuario(),
     'cerrar-modal-usuario': () => cerrarModalNuevoUsuario(),
@@ -3351,8 +3399,8 @@ document.body.addEventListener('change', e => {
     return;
   }
 
-  if (el.id === 'auditoria-filtro-tabla') { ui.adminAuditoriaFiltroTabla = el.value; renderVistaAdmin(); return; }
-  if (el.id === 'auditoria-filtro-usuario') { ui.adminAuditoriaFiltroUsuario = el.value; renderVistaAdmin(); return; }
+  if (el.id === 'auditoria-filtro-tabla') { ui.adminAuditoriaFiltroTabla = el.value; renderVistaAuditoria(); return; }
+  if (el.id === 'auditoria-filtro-usuario') { ui.adminAuditoriaFiltroUsuario = el.value; renderVistaAuditoria(); return; }
 
   if (el.tagName === 'SELECT') {
     const entidad = el.dataset.entidad, campo = el.dataset.campo, id = el.dataset.id;
