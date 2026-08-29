@@ -667,6 +667,7 @@ const ui = {
   aviso: null,
   adminAuditoria: [],
   adminCargandoAuditoria: false,
+  adminErrorAuditoria: false,
   adminAuditoriaFiltroTabla: '',
   adminAuditoriaFiltroUsuario: ''
 };
@@ -862,6 +863,37 @@ function filaAObjetoEmpresa(f) {
 /* ------------------------------------------------------------
    4B. CARGA Y GUARDADO (Supabase)
    ------------------------------------------------------------ */
+// Ninguna espera de red debe quedar pegada para siempre. Un fetch() del navegador no tiene tiempo
+// límite propio — si Supabase tarda en responder (el proyecto del plan gratis "despierta" tras
+// estar inactivo, o simplemente hay una conexión lenta o se cae a mitad de camino), la promesa
+// original se queda esperando indefinidamente y sin esto la pantalla de "Cargando…" nunca se
+// resuelve por sí sola: no avisa qué pasó ni deja reintentar, solo recargar la página a mano una y
+// otra vez con suerte. conTiempoLimite() convierte esa espera eterna en un error normal pasado
+// cierto tiempo, para que cada punto de carga pueda mostrar un mensaje claro y un botón real de
+// reintentar en vez de quedarse mudo.
+function conTiempoLimite(promesa, ms) {
+  let idTimeout;
+  const limite = new Promise((_, reject) => { idTimeout = setTimeout(() => reject(new Error('Tiempo de espera agotado')), ms); });
+  // clearTimeout() en cuanto cualquiera de las dos termine (no solo cuando gana la promesa real):
+  // sin esto, cada llamada exitosa deja un temporizador colgado hasta por 30s — inofensivo para el
+  // usuario (su callback ya no hace nada útil, la carrera ya se resolvió) pero sucio, y en Node
+  // literalmente mantiene el proceso vivo esperando a que ese temporizador dispare solo.
+  return Promise.race([promesa, limite]).finally(() => clearTimeout(idTimeout));
+}
+// Reemplaza la pantalla de carga inicial por un mensaje claro + un botón para reintentar, en vez de
+// dejar "Cargando…" pegado sin ninguna explicación ni forma de continuar salvo adivinar que hay que
+// recargar. Se usa solo en el arranque (antes de que #contenedor-app exista); errores DESPUÉS de
+// haber entrado a la app (p.ej. auditoría, guardar) tienen su propio manejo, ya dentro de su vista.
+function mostrarErrorDeArranque(mensaje) {
+  document.body.classList.remove('mostrando-login', 'mostrando-app');
+  const cont = document.getElementById('pantalla-cargando');
+  if (cont) cont.innerHTML = `
+    <div style="text-align:center;">
+      <p style="margin-bottom:14px;">${esc(mensaje)}</p>
+      <button type="button" class="btn btn-primary" onclick="location.reload()">Reintentar</button>
+    </div>
+  `;
+}
 async function cargar() {
   const consultas = await Promise.all([
     sb.from('clientes').select('*'),
@@ -975,29 +1007,34 @@ async function guardar() {
   marcarGuardando();
   const anterior = _ultimoEstadoSincronizado || estadoInicial();
   try {
-    await aplicarDiff('clientes', calcularDiff(state.clientes.map(objetoAFilaCliente), anterior.clientes.map(objetoAFilaCliente)));
-    await aplicarDiff('registros_personal', calcularDiff(aplanarRegistros(state.clientes).map(objetoAFilaRegistroPersonal), aplanarRegistros(anterior.clientes).map(objetoAFilaRegistroPersonal)));
-    await aplicarDiff('conceptos_personal', calcularDiff(aplanarConceptos(state.clientes).map(objetoAFilaConceptoPersonal), aplanarConceptos(anterior.clientes).map(objetoAFilaConceptoPersonal)));
-    await aplicarDiff('anticipos_personal', calcularDiff(aplanarAnticipos(state.clientes).map(objetoAFilaAnticipoPersonal), aplanarAnticipos(anterior.clientes).map(objetoAFilaAnticipoPersonal)));
-    await aplicarDiff('presupuestos', calcularDiff(state.presupuestos.map(objetoAFilaPresupuesto), anterior.presupuestos.map(objetoAFilaPresupuesto)));
-    await aplicarDiff('capitulos', calcularDiff(aplanarCapitulos(state.presupuestos).map(objetoAFilaCapitulo), aplanarCapitulos(anterior.presupuestos).map(objetoAFilaCapitulo)));
-    await aplicarDiff('items', calcularDiff(aplanarItems(state.presupuestos).map(objetoAFilaItem), aplanarItems(anterior.presupuestos).map(objetoAFilaItem)));
-    await aplicarDiff('recursos_apu', calcularDiff(aplanarRecursos(state.presupuestos).map(objetoAFilaRecurso), aplanarRecursos(anterior.presupuestos).map(objetoAFilaRecurso)));
-    await aplicarDiff('catalogo_materiales', calcularDiff(state.catalogo.map(objetoAFilaCatalogoMaterial), anterior.catalogo.map(objetoAFilaCatalogoMaterial)));
-    await aplicarDiff('catalogo_servicios', calcularDiff(state.catalogoServicios.map(objetoAFilaCatalogoServicio), anterior.catalogoServicios.map(objetoAFilaCatalogoServicio)));
-    await aplicarDiff('catalogo_mano_obra', calcularDiff(state.catalogoManoObra.map(objetoAFilaCatalogoManoObra), anterior.catalogoManoObra.map(objetoAFilaCatalogoManoObra)));
+    // Todo el guardado real va envuelto en un tiempo límite: si Supabase no responde en 30s (proyecto
+    // del plan gratis despertando, conexión caída a mitad de camino), esto se rechaza como cualquier
+    // otro error de red en vez de dejar "Guardando…" pegado para siempre — ver conTiempoLimite().
+    await conTiempoLimite((async () => {
+      await aplicarDiff('clientes', calcularDiff(state.clientes.map(objetoAFilaCliente), anterior.clientes.map(objetoAFilaCliente)));
+      await aplicarDiff('registros_personal', calcularDiff(aplanarRegistros(state.clientes).map(objetoAFilaRegistroPersonal), aplanarRegistros(anterior.clientes).map(objetoAFilaRegistroPersonal)));
+      await aplicarDiff('conceptos_personal', calcularDiff(aplanarConceptos(state.clientes).map(objetoAFilaConceptoPersonal), aplanarConceptos(anterior.clientes).map(objetoAFilaConceptoPersonal)));
+      await aplicarDiff('anticipos_personal', calcularDiff(aplanarAnticipos(state.clientes).map(objetoAFilaAnticipoPersonal), aplanarAnticipos(anterior.clientes).map(objetoAFilaAnticipoPersonal)));
+      await aplicarDiff('presupuestos', calcularDiff(state.presupuestos.map(objetoAFilaPresupuesto), anterior.presupuestos.map(objetoAFilaPresupuesto)));
+      await aplicarDiff('capitulos', calcularDiff(aplanarCapitulos(state.presupuestos).map(objetoAFilaCapitulo), aplanarCapitulos(anterior.presupuestos).map(objetoAFilaCapitulo)));
+      await aplicarDiff('items', calcularDiff(aplanarItems(state.presupuestos).map(objetoAFilaItem), aplanarItems(anterior.presupuestos).map(objetoAFilaItem)));
+      await aplicarDiff('recursos_apu', calcularDiff(aplanarRecursos(state.presupuestos).map(objetoAFilaRecurso), aplanarRecursos(anterior.presupuestos).map(objetoAFilaRecurso)));
+      await aplicarDiff('catalogo_materiales', calcularDiff(state.catalogo.map(objetoAFilaCatalogoMaterial), anterior.catalogo.map(objetoAFilaCatalogoMaterial)));
+      await aplicarDiff('catalogo_servicios', calcularDiff(state.catalogoServicios.map(objetoAFilaCatalogoServicio), anterior.catalogoServicios.map(objetoAFilaCatalogoServicio)));
+      await aplicarDiff('catalogo_mano_obra', calcularDiff(state.catalogoManoObra.map(objetoAFilaCatalogoManoObra), anterior.catalogoManoObra.map(objetoAFilaCatalogoManoObra)));
 
-    if (JSON.stringify(state.empresa) !== JSON.stringify(anterior.empresa)) {
-      const { error } = await sb.from('empresa_config').update({
-        consecutivo_presupuesto: state.empresa.consecutivoPresupuesto,
-        aiu_administracion_defecto: numero(state.empresa.aiuDefecto.administracion),
-        aiu_imprevistos_defecto: numero(state.empresa.aiuDefecto.imprevistos),
-        aiu_utilidad_defecto: numero(state.empresa.aiuDefecto.utilidad),
-        iva_sobre_utilidad_defecto: numero(state.empresa.ivaSobreUtilidadDefecto),
-        factor_margen_defecto: numero(state.empresa.factorMargenDefecto)
-      }).eq('id', 1);
-      if (error) throw new Error('Guardando configuración de empresa: ' + error.message);
-    }
+      if (JSON.stringify(state.empresa) !== JSON.stringify(anterior.empresa)) {
+        const { error } = await sb.from('empresa_config').update({
+          consecutivo_presupuesto: state.empresa.consecutivoPresupuesto,
+          aiu_administracion_defecto: numero(state.empresa.aiuDefecto.administracion),
+          aiu_imprevistos_defecto: numero(state.empresa.aiuDefecto.imprevistos),
+          aiu_utilidad_defecto: numero(state.empresa.aiuDefecto.utilidad),
+          iva_sobre_utilidad_defecto: numero(state.empresa.ivaSobreUtilidadDefecto),
+          factor_margen_defecto: numero(state.empresa.factorMargenDefecto)
+        }).eq('id', 1);
+        if (error) throw new Error('Guardando configuración de empresa: ' + error.message);
+      }
+    })(), 30000);
 
     _ultimoEstadoSincronizado = clonarProfundo(state);
     marcarGuardado();
@@ -3103,12 +3140,20 @@ function resumenCambiosAuditoria(entrada, mapaTrabajadores) {
 }
 async function cargarAuditoria() {
   ui.adminCargandoAuditoria = true;
+  ui.adminErrorAuditoria = false;
   if (ui.vista === 'auditoria') renderVistaAuditoria();
-  const { data, error } = await sb.from('audit_log')
-    .select('id, tabla, operacion, fila_id, usuario_id, datos_anteriores, datos_nuevos, creado_en, profiles(nombre)')
-    .order('creado_en', { ascending: false })
-    .limit(300);
-  ui.adminAuditoria = error ? [] : (data || []);
+  try {
+    const { data, error } = await conTiempoLimite(sb.from('audit_log')
+      .select('id, tabla, operacion, fila_id, usuario_id, datos_anteriores, datos_nuevos, creado_en, profiles(nombre)')
+      .order('creado_en', { ascending: false })
+      .limit(300), 20000);
+    ui.adminAuditoria = error ? [] : (data || []);
+    ui.adminErrorAuditoria = !!error;
+  } catch (e) {
+    // Tiempo agotado o la red se cayó a mitad de camino: no dejar "Cargando auditoría…" pegado.
+    ui.adminAuditoria = [];
+    ui.adminErrorAuditoria = true;
+  }
   ui.adminCargandoAuditoria = false;
   if (ui.vista === 'auditoria') renderVistaAuditoria();
 }
@@ -3186,6 +3231,10 @@ function contextoAuditoria(tabla, filaId, mapas) {
 }
 function renderAdminAuditoria() {
   if (ui.adminCargandoAuditoria) return `<p style="color:var(--ink-faint);font-size:.9rem;">Cargando auditoría…</p>`;
+  if (ui.adminErrorAuditoria) return `
+    <p style="color:var(--coral);font-size:.9rem;margin-bottom:10px;">No se pudo cargar la auditoría. Revisa tu conexión.</p>
+    <button type="button" class="btn btn-primary" data-action="reintentar-auditoria">Reintentar</button>
+  `;
   const mapaTrabajadores = new Map();
   state.clientes.forEach(c => c.manoDeObra.forEach(r => mapaTrabajadores.set(r.id, r.trabajador)));
   const mapasContexto = construirMapasContextoAuditoria();
@@ -3412,6 +3461,7 @@ document.body.addEventListener('click', e => {
     'cerrar-modal-editar-usuario': () => cerrarModalEditarUsuario(),
     'elegir-avatar': () => { const el = document.querySelector('.avatar-file-input'); if (el) el.click(); },
     'descargar-backup': () => descargarCopiaSeguridad(),
+    'reintentar-auditoria': () => cargarAuditoria(),
     'confirmacion-cancelar': () => resolverConfirmacion(false),
     'confirmacion-aceptar': () => resolverConfirmacion(true),
     'aviso-cerrar': () => cerrarAviso()
@@ -3622,19 +3672,24 @@ async function cerrarSesion() {
 // Ya con sesión válida (recién iniciada, o ya existente al recargar la página): trae el perfil
 // (para saber el rol), carga los datos reales desde Supabase, y recién ahí muestra la app.
 async function continuarConSesion(session, esLoginFresco) {
-  const { data: perfil, error } = await sb.from('profiles').select('nombre, rol, avatar_url').eq('id', session.user.id).maybeSingle();
+  let perfil, error;
+  try {
+    ({ data: perfil, error } = await conTiempoLimite(
+      sb.from('profiles').select('nombre, rol, avatar_url').eq('id', session.user.id).maybeSingle(), 15000));
+  } catch (e) {
+    mostrarErrorDeArranque('No se pudo conectar con el servidor. Revisa tu conexión e intenta de nuevo.');
+    return;
+  }
   if (error || !perfil) {
     mostrarPantallaLogin('No se pudo cargar tu perfil. Contacta a un administrador.');
     return;
   }
   ui.usuarioActual = { id: session.user.id, email: session.user.email, nombre: perfil.nombre || session.user.email, rol: perfil.rol, avatar_url: perfil.avatar_url || null };
   try {
-    await cargar();
+    await conTiempoLimite(cargar(), 30000);
   } catch (e) {
     console.error(e);
-    document.body.classList.remove('mostrando-login', 'mostrando-app');
-    const cargando = document.getElementById('pantalla-cargando');
-    if (cargando) cargando.textContent = 'No se pudo cargar la información. Revisa tu conexión y recarga la página.';
+    mostrarErrorDeArranque('No se pudo cargar la información. Revisa tu conexión e intenta de nuevo.');
     return;
   }
   renderSidebarUsuario();
@@ -3648,7 +3703,13 @@ async function continuarConSesion(session, esLoginFresco) {
 }
 
 async function iniciarApp() {
-  const { data: { session } } = await sb.auth.getSession();
+  let session;
+  try {
+    ({ data: { session } } = await conTiempoLimite(sb.auth.getSession(), 15000));
+  } catch (e) {
+    mostrarErrorDeArranque('No se pudo conectar. Revisa tu conexión a internet e intenta de nuevo.');
+    return;
+  }
   if (!session) { mostrarPantallaLogin(); return; }
   await continuarConSesion(session);
 }
