@@ -3059,7 +3059,17 @@ function resumenCambiosAuditoria(entrada, mapaTrabajadores) {
   const info = AUDITORIA_TABLAS[entrada.tabla] || { etiqueta: entrada.tabla, campo: null };
   if (entrada.operacion === 'INSERT') {
     const nombre = info.campo && entrada.datos_nuevos ? entrada.datos_nuevos[info.campo] : null;
-    return `Creó ${info.etiqueta.toLowerCase()}${nombre ? ` "${nombre}"` : ''}`;
+    let texto = `Creó ${info.etiqueta.toLowerCase()}${nombre ? ` "${nombre}"` : ''}`;
+    // Un grupo fusionado (ver agruparMovimientosAuditoria) que empezó como INSERT puede terminar con
+    // trabajador_asociado_id ya puesto (crear el ítem y vincularlo a un trabajador en una sola
+    // sesión) — sin esto, esa vinculación desaparecía del todo, porque esta rama nunca miraba nada
+    // fuera del campo identificador.
+    const idTrabajador = entrada.datos_nuevos && entrada.datos_nuevos.trabajador_asociado_id;
+    if (idTrabajador) {
+      const nombreTrabajador = mapaTrabajadores && mapaTrabajadores.get(idTrabajador);
+      texto += ` y lo vinculó al trabajador${nombreTrabajador ? ` "${nombreTrabajador}"` : ' (ya no existe)'}`;
+    }
+    return texto;
   }
   if (entrada.operacion === 'DELETE') {
     const nombre = info.campo && entrada.datos_anteriores ? entrada.datos_anteriores[info.campo] : null;
@@ -3095,24 +3105,99 @@ async function cargarAuditoria() {
   ui.adminCargandoAuditoria = true;
   if (ui.vista === 'auditoria') renderVistaAuditoria();
   const { data, error } = await sb.from('audit_log')
-    .select('id, tabla, operacion, fila_id, datos_anteriores, datos_nuevos, creado_en, profiles(nombre)')
+    .select('id, tabla, operacion, fila_id, usuario_id, datos_anteriores, datos_nuevos, creado_en, profiles(nombre)')
     .order('creado_en', { ascending: false })
     .limit(300);
   ui.adminAuditoria = error ? [] : (data || []);
   ui.adminCargandoAuditoria = false;
   if (ui.vista === 'auditoria') renderVistaAuditoria();
 }
+// Escribir un campo (p.ej. escribir el precio de un ítem) dispara guardar() por cada tecla/blur, así
+// que una sola edición real de una persona puede dejar varias filas seguidas en audit_log para la
+// MISMA fila (crear vacío, luego descripción, luego el precio 2-3 veces mientras se corrige). Eso es
+// preciso a nivel de base de datos, pero nadie necesita ver cada paso intermedio — el pedido del
+// usuario fue explícito: "no es necesario que salga todo eso". Se fusionan en una sola fila los
+// movimientos consecutivos sobre la misma fila, del MISMO usuario (nunca entre personas distintas —
+// eso rompería a quién se le atribuye qué), dentro de una ventana corta de tiempo. El "antes" queda
+// del primero del grupo y el "después" del último, así que un vaivén (0 → 3220 → 0 → 32000) queda
+// como un solo cambio neto (0 → 32000) en vez de 3 filas. DELETE nunca se fusiona: es un hecho
+// puntual y significativo por sí solo. No se toca audit_log ni el trigger — la base de datos sigue
+// guardando cada escritura real tal cual; esto solo agrupa cómo se MUESTRA.
+const VENTANA_AGRUPAR_AUDITORIA_MS = 3 * 60 * 1000;
+function agruparMovimientosAuditoria(entradas) {
+  const ascendente = [...entradas].sort((a, b) => new Date(a.creado_en) - new Date(b.creado_en));
+  const grupos = [];
+  const abiertoPorClave = new Map();
+  ascendente.forEach(entrada => {
+    if (entrada.operacion === 'DELETE') { grupos.push({ ...entrada }); return; }
+    const clave = `${entrada.tabla}::${entrada.fila_id}::${entrada.usuario_id || ''}`;
+    const abierto = abiertoPorClave.get(clave);
+    if (abierto && (new Date(entrada.creado_en) - new Date(abierto.creado_en)) <= VENTANA_AGRUPAR_AUDITORIA_MS) {
+      abierto.datos_nuevos = entrada.datos_nuevos;
+      abierto.creado_en = entrada.creado_en;
+    } else {
+      const nuevo = { ...entrada };
+      grupos.push(nuevo);
+      abiertoPorClave.set(clave, nuevo);
+    }
+  });
+  return grupos.sort((a, b) => new Date(b.creado_en) - new Date(a.creado_en));
+}
+// Arma, una sola vez por render, los mapas para saber "esto en qué presupuesto/cliente vive" — un
+// ítem no sabe su cliente directamente (vive dentro de un capítulo, dentro de un presupuesto), así
+// que hay que caminar el árbol ya cargado en memoria una vez y quedarse con los mapas id → dueño.
+function construirMapasContextoAuditoria() {
+  const nombreClientePorId = new Map(state.clientes.map(c => [c.id, c.nombre]));
+  const presupuestoPorId = new Map(state.presupuestos.map(p => [p.id, p]));
+  const presupuestoPorCapituloId = new Map();
+  const presupuestoPorItemId = new Map();
+  const presupuestoPorRecursoId = new Map();
+  state.presupuestos.forEach(p => p.capitulos.forEach(cap => {
+    presupuestoPorCapituloId.set(cap.id, p);
+    cap.items.forEach(it => {
+      presupuestoPorItemId.set(it.id, p);
+      it.apu.recursos.forEach(r => presupuestoPorRecursoId.set(r.id, p));
+    });
+  }));
+  const clienteNombrePorRegistroId = new Map();
+  const clienteNombrePorConceptoId = new Map();
+  const clienteNombrePorAnticipoId = new Map();
+  state.clientes.forEach(c => c.manoDeObra.forEach(r => {
+    clienteNombrePorRegistroId.set(r.id, c.nombre);
+    r.conceptos.forEach(cp => clienteNombrePorConceptoId.set(cp.id, c.nombre));
+    r.anticipos.forEach(an => clienteNombrePorAnticipoId.set(an.id, c.nombre));
+  }));
+  return { nombreClientePorId, presupuestoPorId, presupuestoPorCapituloId, presupuestoPorItemId, presupuestoPorRecursoId, clienteNombrePorRegistroId, clienteNombrePorConceptoId, clienteNombrePorAnticipoId };
+}
+// Da "Nombre del cliente (COT-000X)" para lo que vive dentro de un presupuesto, o solo el nombre del
+// cliente para lo que vive dentro de costos de personal — null si la tabla no pertenece a ninguno
+// (catálogos, usuarios, configuración de empresa) o si la fila ya no existe hoy (p.ej. se eliminó).
+function contextoAuditoria(tabla, filaId, mapas) {
+  const conPresupuesto = { presupuestos: mapas.presupuestoPorId, capitulos: mapas.presupuestoPorCapituloId, items: mapas.presupuestoPorItemId, recursos_apu: mapas.presupuestoPorRecursoId };
+  if (conPresupuesto[tabla]) {
+    const p = conPresupuesto[tabla].get(filaId);
+    if (!p) return null;
+    const nombreCliente = mapas.nombreClientePorId.get(p.clienteId);
+    return nombreCliente ? `${nombreCliente} (${p.numero})` : p.numero;
+  }
+  const conCliente = { registros_personal: mapas.clienteNombrePorRegistroId, conceptos_personal: mapas.clienteNombrePorConceptoId, anticipos_personal: mapas.clienteNombrePorAnticipoId };
+  if (conCliente[tabla]) return conCliente[tabla].get(filaId) || null;
+  return null;
+}
 function renderAdminAuditoria() {
   if (ui.adminCargandoAuditoria) return `<p style="color:var(--ink-faint);font-size:.9rem;">Cargando auditoría…</p>`;
   const mapaTrabajadores = new Map();
   state.clientes.forEach(c => c.manoDeObra.forEach(r => mapaTrabajadores.set(r.id, r.trabajador)));
+  const mapasContexto = construirMapasContextoAuditoria();
   // Cada fila de audit_log es un cambio real en la base de datos, pero no todo cambio real es
   // interesante para quien revisa (p.ej. tocar el filtro "Mat/Serv/M.O." del buscador de catálogo
   // de un ítem también llama guardar()). resumenCambiosAuditoria() da null cuando lo único que
   // cambió es un campo técnico ya oculto — esas filas se descartan aquí mismo, antes de armar los
-  // filtros y el conteo, para que la vista solo hable de cambios reales de negocio.
-  const significativas = ui.adminAuditoria
-    .map(a => ({ entrada: a, resumen: resumenCambiosAuditoria(a, mapaTrabajadores) }))
+  // filtros y el conteo, para que la vista solo hable de cambios reales de negocio. Antes de
+  // resumir, se agrupan los movimientos consecutivos del mismo usuario sobre la misma fila (ver
+  // agruparMovimientosAuditoria) para no repetir la misma edición varias veces.
+  const significativas = agruparMovimientosAuditoria(ui.adminAuditoria)
+    .map(a => ({ entrada: a, resumen: resumenCambiosAuditoria(a, mapaTrabajadores), contexto: contextoAuditoria(a.tabla, a.fila_id, mapasContexto) }))
     .filter(x => x.resumen !== null);
   const tablasPresentes = [...new Set(significativas.map(x => x.entrada.tabla))].sort();
   const usuariosPresentes = [...new Set(significativas.map(x => x.entrada.profiles ? x.entrada.profiles.nombre : null).filter(Boolean))].sort();
@@ -3141,7 +3226,7 @@ function renderAdminAuditoria() {
           <td style="white-space:nowrap;">${esc(a.profiles ? a.profiles.nombre : 'Desconocido')}</td>
           <td style="white-space:nowrap;">${esc(etiquetaTablaAuditoria(a.tabla))}</td>
           <td style="white-space:nowrap;"><span class="badge badge-auditoria-${a.operacion === 'INSERT' ? 'crear' : a.operacion === 'DELETE' ? 'eliminar' : 'modificar'}">${a.operacion === 'INSERT' ? 'Creó' : a.operacion === 'DELETE' ? 'Eliminó' : 'Modificó'}</span></td>
-          <td style="font-size:.82rem;color:var(--ink-soft);">${esc(x.resumen)}</td>
+          <td style="font-size:.82rem;color:var(--ink-soft);">${x.contexto ? `<span style="color:var(--ink-faint);">${esc(x.contexto)}:</span> ` : ''}${esc(x.resumen)}</td>
         </tr>`; }).join('')}</tbody>
     </table></div>`}
   `;
