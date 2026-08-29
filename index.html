@@ -112,6 +112,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 body.es-admin .solo-admin{ display:block; }
 
 main{ flex:1; min-width:0; max-width:1020px; padding:32px 32px 90px; }
+main:has([data-view="auditoria"].is-active){ max-width:1400px; }
 [data-view]{ display:none; }
 [data-view].is-active{ display:block; }
 
@@ -3013,13 +3014,10 @@ function etiquetaTablaAuditoria(tabla) {
 // Campos puramente técnicos/de UI (orden en la lista, si un capítulo está colapsado, el filtro
 // interno del combobox de catálogo) — cambian solos todo el tiempo y no le dicen nada útil a
 // alguien revisando qué se modificó de verdad, así que no se muestran en el detalle.
-const AUDITORIA_CAMPOS_OCULTOS = new Set(['catalogo_filtro', 'orden', 'colapsado']);
-// Estos dos campos guardan el id interno de otro registro (p.ej. "cp_mtehht9p_1") — mostrar ese
-// id tal cual no le dice nada a un humano, así que se muestra una frase en su lugar.
-const AUDITORIA_CAMPOS_ESPECIALES = {
-  concepto_asociado_id: (antes, despues) => despues ? 'Se vinculó a un concepto de costos de personal' : 'Se desvinculó de un concepto de costos de personal',
-  trabajador_asociado_id: (antes, despues) => despues ? 'Se vinculó a un trabajador' : 'Se desvinculó de un trabajador'
-};
+// concepto_asociado_id siempre cambia en el mismo movimiento que trabajador_asociado_id (ver
+// asociarItemATrabajador()/quitarConceptoAsociado() — nunca uno sin el otro), así que se omite
+// aquí: contarlo por separado sería repetir la misma vinculación dos veces en el detalle.
+const AUDITORIA_CAMPOS_OCULTOS = new Set(['catalogo_filtro', 'orden', 'colapsado', 'concepto_asociado_id']);
 const AUDITORIA_ETIQUETAS_CAMPO = {
   nombre: 'Nombre', descripcion: 'Descripción', unidad: 'Unidad', cantidad: 'Cantidad',
   precio: 'Precio', precio_directo: 'Precio directo', precio_unitario: 'Precio unitario',
@@ -3054,7 +3052,10 @@ function formatFechaHoraAuditoria(iso) {
 // Arma una descripción legible del movimiento: para crear/eliminar usa el campo identificador de
 // esa tabla (el nombre del cliente, el número del presupuesto...); para modificar, compara
 // datos_anteriores contra datos_nuevos y solo lista los campos que de verdad cambiaron.
-function resumenCambiosAuditoria(entrada) {
+// mapaTrabajadores (id de registro de personal -> nombre del trabajador, armado por
+// renderAdminAuditoria() a partir de state.clientes ya cargado en memoria) resuelve
+// trabajador_asociado_id al nombre real de la persona en vez de una frase genérica.
+function resumenCambiosAuditoria(entrada, mapaTrabajadores) {
   const info = AUDITORIA_TABLAS[entrada.tabla] || { etiqueta: entrada.tabla, campo: null };
   if (entrada.operacion === 'INSERT') {
     const nombre = info.campo && entrada.datos_nuevos ? entrada.datos_nuevos[info.campo] : null;
@@ -3070,7 +3071,17 @@ function resumenCambiosAuditoria(entrada) {
   Object.keys(despues).forEach(campo => {
     if (campo === 'id' || AUDITORIA_CAMPOS_OCULTOS.has(campo)) return;
     if (JSON.stringify(antes[campo]) === JSON.stringify(despues[campo])) return;
-    if (AUDITORIA_CAMPOS_ESPECIALES[campo]) { partes.push(AUDITORIA_CAMPOS_ESPECIALES[campo](antes[campo], despues[campo])); return; }
+    if (campo === 'trabajador_asociado_id') {
+      const item = despues.descripcion ? ` el ítem "${despues.descripcion}"` : '';
+      if (despues[campo]) {
+        const nombre = mapaTrabajadores && mapaTrabajadores.get(despues[campo]);
+        partes.push(`Vinculó${item} al trabajador${nombre ? ` "${nombre}"` : ' (ya no existe)'}`);
+      } else {
+        const nombreAnterior = mapaTrabajadores && mapaTrabajadores.get(antes[campo]);
+        partes.push(`Desvinculó${item} del trabajador${nombreAnterior ? ` "${nombreAnterior}"` : ''}`);
+      }
+      return;
+    }
     partes.push(`${etiquetaCampoAuditoria(campo)}: ${formatValorAuditoria(antes[campo])} → ${formatValorAuditoria(despues[campo])}`);
   });
   if (partes.length === 0) return `Modificó ${info.etiqueta.toLowerCase()}`;
@@ -3089,6 +3100,8 @@ async function cargarAuditoria() {
 }
 function renderAdminAuditoria() {
   if (ui.adminCargandoAuditoria) return `<p style="color:var(--ink-faint);font-size:.9rem;">Cargando auditoría…</p>`;
+  const mapaTrabajadores = new Map();
+  state.clientes.forEach(c => c.manoDeObra.forEach(r => mapaTrabajadores.set(r.id, r.trabajador)));
   const tablasPresentes = [...new Set(ui.adminAuditoria.map(a => a.tabla))].sort();
   const usuariosPresentes = [...new Set(ui.adminAuditoria.map(a => a.profiles ? a.profiles.nombre : null).filter(Boolean))].sort();
   const filtradas = ui.adminAuditoria.filter(a =>
@@ -3109,14 +3122,14 @@ function renderAdminAuditoria() {
     </div>
     ${filtradas.length === 0 ? `<p style="color:var(--ink-faint);font-size:.9rem;">Sin movimientos${ui.adminAuditoria.length ? ' con ese filtro.' : ' todavía.'}</p>` : `
     <div class="table-wrap"><table>
-      <thead><tr><th>Cuándo</th><th>Quién</th><th>Área</th><th>Acción</th><th>Detalle</th></tr></thead>
+      <thead><tr><th>Cuándo</th><th>Quién</th><th>Área</th><th>Acción</th><th style="width:100%;">Detalle</th></tr></thead>
       <tbody>${filtradas.map(a => `
         <tr>
           <td class="mono" style="white-space:nowrap;">${formatFechaHoraAuditoria(a.creado_en)}</td>
-          <td>${esc(a.profiles ? a.profiles.nombre : 'Desconocido')}</td>
-          <td>${esc(etiquetaTablaAuditoria(a.tabla))}</td>
-          <td><span class="badge badge-auditoria-${a.operacion === 'INSERT' ? 'crear' : a.operacion === 'DELETE' ? 'eliminar' : 'modificar'}">${a.operacion === 'INSERT' ? 'Creó' : a.operacion === 'DELETE' ? 'Eliminó' : 'Modificó'}</span></td>
-          <td style="font-size:.82rem;color:var(--ink-soft);">${esc(resumenCambiosAuditoria(a))}</td>
+          <td style="white-space:nowrap;">${esc(a.profiles ? a.profiles.nombre : 'Desconocido')}</td>
+          <td style="white-space:nowrap;">${esc(etiquetaTablaAuditoria(a.tabla))}</td>
+          <td style="white-space:nowrap;"><span class="badge badge-auditoria-${a.operacion === 'INSERT' ? 'crear' : a.operacion === 'DELETE' ? 'eliminar' : 'modificar'}">${a.operacion === 'INSERT' ? 'Creó' : a.operacion === 'DELETE' ? 'Eliminó' : 'Modificó'}</span></td>
+          <td style="font-size:.82rem;color:var(--ink-soft);">${esc(resumenCambiosAuditoria(a, mapaTrabajadores))}</td>
         </tr>`).join('')}</tbody>
     </table></div>`}
   `;
