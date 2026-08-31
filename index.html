@@ -2623,7 +2623,13 @@ function renderFilaRegistroPersonal(r) {
    16C. COMBOBOX DE CATÁLOGO (reemplaza el <datalist> nativo)
    ============================================================ */
 let _comboboxInputActivo = null;
-const COMBOBOX_LIMITE = 12;
+// Antes en 12: con más de 12 elementos activos en un catálogo, los que quedaban después del 12°
+// eran invisibles al abrir el buscador (nunca aparecían, ni escribiendo si la coincidencia no
+// alcanzaba a entrar en esos 12) — reportado por el usuario con 22 materiales activos reales. El
+// panel ya es un contenedor con scroll propio (.combobox-panel{ overflow-y:auto }), así que no
+// hace falta cortar la lista por espacio; 200 es solo un tope de cordura para un catálogo
+// desmedido, no algo pensado para alcanzarse en el uso real de esta app.
+const COMBOBOX_LIMITE = 200;
 
 function opcionesParaCombobox(el) {
   const objetivo = el.dataset.catalogoTarget;
