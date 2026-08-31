@@ -3201,7 +3201,7 @@ function formatFechaHoraAuditoria(iso) {
 // mapaTrabajadores (id de registro de personal -> nombre del trabajador, armado por
 // renderAdminAuditoria() a partir de state.clientes ya cargado en memoria) resuelve
 // trabajador_asociado_id al nombre real de la persona en vez de una frase genérica.
-function resumenCambiosAuditoria(entrada, mapaTrabajadores) {
+function resumenCambiosAuditoria(entrada, mapaTrabajadores, mapaCatalogoPorNombre) {
   const info = AUDITORIA_TABLAS[entrada.tabla] || { etiqueta: entrada.tabla, campo: null };
   if (entrada.operacion === 'INSERT') {
     const nombre = info.campo && entrada.datos_nuevos ? entrada.datos_nuevos[info.campo] : null;
@@ -3224,8 +3224,32 @@ function resumenCambiosAuditoria(entrada, mapaTrabajadores) {
   const antes = entrada.datos_anteriores || {};
   const despues = entrada.datos_nuevos || {};
   const partes = [];
+  // Elegir un material/servicio/mano de obra ya existente del catálogo para un ítem (el buscador
+  // de la sección 16C) cambia descripcion/precio_directo/unidad de una sola vez — mostrado como
+  // "Descripción: — → X · Precio directo: 0 → 8000" parece que alguien ESCRIBIÓ ese precio a mano,
+  // cuando en realidad ya venía así del catálogo (reportado por el usuario con un caso real). Si
+  // la descripción nueva coincide con un nombre real del catálogo Y el precio actual de esa fila
+  // coincide con lo que YA tiene esa entrada de catálogo, se resume como una sola frase en vez de
+  // listar cada campo como si fuera una edición manual. Un precio distinto al del catálogo (de
+  // verdad se escribió a mano después) NO entra aquí — sigue mostrando los campos tal cual.
+  const camposConsumidos = new Set();
+  if (entrada.tabla === 'items' && despues.descripcion && antes.descripcion !== despues.descripcion
+      && mapaCatalogoPorNombre && mapaCatalogoPorNombre.has(despues.descripcion)) {
+    const precioCatalogo = mapaCatalogoPorNombre.get(despues.descripcion);
+    if (precioCatalogo === null || precioCatalogo === despues.precio_directo) {
+      // el texto del precio depende de si ESE catálogo tiene precio (materiales/mano de obra), no
+      // de si precio_directo "no es null" — un servicio deja precio_directo en 0 sin tocarlo (no
+      // tiene precio propio), y mostrar "(precio: $0)" ahí sería tan engañoso como el problema
+      // original que se está arreglando.
+      const precioTexto = precioCatalogo !== null ? ` (precio: ${formatCOP(despues.precio_directo)})` : '';
+      partes.push(`Aplicó "${despues.descripcion}" del catálogo${precioTexto}`);
+      camposConsumidos.add('descripcion');
+      camposConsumidos.add('precio_directo');
+      camposConsumidos.add('unidad');
+    }
+  }
   Object.keys(despues).forEach(campo => {
-    if (campo === 'id' || AUDITORIA_CAMPOS_OCULTOS.has(campo)) return;
+    if (campo === 'id' || AUDITORIA_CAMPOS_OCULTOS.has(campo) || camposConsumidos.has(campo)) return;
     if (JSON.stringify(antes[campo]) === JSON.stringify(despues[campo])) return;
     if (campo === 'trabajador_asociado_id') {
       const item = despues.descripcion ? ` el ítem "${despues.descripcion}"` : '';
@@ -3359,6 +3383,13 @@ function renderAdminAuditoria() {
   const mapaTrabajadores = new Map();
   state.clientes.forEach(c => c.manoDeObra.forEach(r => mapaTrabajadores.set(r.id, r.trabajador)));
   const mapasContexto = construirMapasContextoAuditoria();
+  // nombre del catálogo -> precio (null para servicios, que no tienen precio) — para que
+  // resumenCambiosAuditoria() pueda distinguir "elegí esto del catálogo" de "escribí este precio
+  // a mano", aunque a nivel de fila de la base de datos ambos casos cambian las mismas columnas.
+  const mapaCatalogoPorNombre = new Map();
+  state.catalogo.forEach(c => { if (!mapaCatalogoPorNombre.has(c.nombre)) mapaCatalogoPorNombre.set(c.nombre, c.precio); });
+  state.catalogoServicios.forEach(c => { if (!mapaCatalogoPorNombre.has(c.nombre)) mapaCatalogoPorNombre.set(c.nombre, null); });
+  state.catalogoManoObra.forEach(c => { if (!mapaCatalogoPorNombre.has(c.nombre)) mapaCatalogoPorNombre.set(c.nombre, c.precio); });
   // Cada fila de audit_log es un cambio real en la base de datos, pero no todo cambio real es
   // interesante para quien revisa (p.ej. tocar el filtro "Mat/Serv/M.O." del buscador de catálogo
   // de un ítem también llama guardar()). resumenCambiosAuditoria() da null cuando lo único que
@@ -3367,7 +3398,7 @@ function renderAdminAuditoria() {
   // resumir, se agrupan los movimientos consecutivos del mismo usuario sobre la misma fila (ver
   // agruparMovimientosAuditoria) para no repetir la misma edición varias veces.
   const significativas = agruparMovimientosAuditoria(ui.adminAuditoria)
-    .map(a => ({ entrada: a, resumen: resumenCambiosAuditoria(a, mapaTrabajadores), contexto: contextoAuditoria(a.tabla, a.fila_id, mapasContexto) }))
+    .map(a => ({ entrada: a, resumen: resumenCambiosAuditoria(a, mapaTrabajadores, mapaCatalogoPorNombre), contexto: contextoAuditoria(a.tabla, a.fila_id, mapasContexto) }))
     .filter(x => x.resumen !== null);
   const tablasPresentes = [...new Set(significativas.map(x => x.entrada.tabla))].sort();
   const usuariosPresentes = [...new Set(significativas.map(x => x.entrada.profiles ? x.entrada.profiles.nombre : null).filter(Boolean))].sort();
