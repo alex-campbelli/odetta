@@ -3306,11 +3306,17 @@ function construirMapasContextoAuditoria() {
   const presupuestoPorCapituloId = new Map();
   const presupuestoPorItemId = new Map();
   const presupuestoPorRecursoId = new Map();
+  // Un ítem/recurso vive dentro de un capítulo — sin esto, "Creó ítem" (sin descripción todavía,
+  // p.ej. recién creado vacío) no dice en cuál de los capítulos del presupuesto pasó, que es
+  // justo lo que pidió el usuario para tener más claro dónde ocurrió el cambio.
+  const capituloNombrePorItemId = new Map();
+  const capituloNombrePorRecursoId = new Map();
   state.presupuestos.forEach(p => p.capitulos.forEach(cap => {
     presupuestoPorCapituloId.set(cap.id, p);
     cap.items.forEach(it => {
       presupuestoPorItemId.set(it.id, p);
-      it.apu.recursos.forEach(r => presupuestoPorRecursoId.set(r.id, p));
+      capituloNombrePorItemId.set(it.id, cap.nombre);
+      it.apu.recursos.forEach(r => { presupuestoPorRecursoId.set(r.id, p); capituloNombrePorRecursoId.set(r.id, cap.nombre); });
     });
   }));
   const clienteNombrePorRegistroId = new Map();
@@ -3321,18 +3327,24 @@ function construirMapasContextoAuditoria() {
     r.conceptos.forEach(cp => clienteNombrePorConceptoId.set(cp.id, c.nombre));
     r.anticipos.forEach(an => clienteNombrePorAnticipoId.set(an.id, c.nombre));
   }));
-  return { nombreClientePorId, presupuestoPorId, presupuestoPorCapituloId, presupuestoPorItemId, presupuestoPorRecursoId, clienteNombrePorRegistroId, clienteNombrePorConceptoId, clienteNombrePorAnticipoId };
+  return { nombreClientePorId, presupuestoPorId, presupuestoPorCapituloId, presupuestoPorItemId, presupuestoPorRecursoId, capituloNombrePorItemId, capituloNombrePorRecursoId, clienteNombrePorRegistroId, clienteNombrePorConceptoId, clienteNombrePorAnticipoId };
 }
-// Da "Nombre del cliente (COT-000X)" para lo que vive dentro de un presupuesto, o solo el nombre del
-// cliente para lo que vive dentro de costos de personal — null si la tabla no pertenece a ninguno
-// (catálogos, usuarios, configuración de empresa) o si la fila ya no existe hoy (p.ej. se eliminó).
+// Da "Nombre del cliente (COT-000X)" para lo que vive dentro de un presupuesto — sumando
+// "· Capítulo "X"" cuando además se puede saber en cuál capítulo (ítems y recursos de APU) — o
+// solo el nombre del cliente para lo que vive dentro de costos de personal. null si la tabla no
+// pertenece a ninguno (catálogos, usuarios, configuración de empresa) o si la fila ya no existe
+// hoy (p.ej. se eliminó).
 function contextoAuditoria(tabla, filaId, mapas) {
   const conPresupuesto = { presupuestos: mapas.presupuestoPorId, capitulos: mapas.presupuestoPorCapituloId, items: mapas.presupuestoPorItemId, recursos_apu: mapas.presupuestoPorRecursoId };
   if (conPresupuesto[tabla]) {
     const p = conPresupuesto[tabla].get(filaId);
     if (!p) return null;
     const nombreCliente = mapas.nombreClientePorId.get(p.clienteId);
-    return nombreCliente ? `${nombreCliente} (${p.numero})` : p.numero;
+    let contexto = nombreCliente ? `${nombreCliente} (${p.numero})` : p.numero;
+    const mapaCapitulo = tabla === 'items' ? mapas.capituloNombrePorItemId : tabla === 'recursos_apu' ? mapas.capituloNombrePorRecursoId : null;
+    const nombreCapitulo = mapaCapitulo && mapaCapitulo.get(filaId);
+    if (nombreCapitulo) contexto += ` · Capítulo "${nombreCapitulo}"`;
+    return contexto;
   }
   const conCliente = { registros_personal: mapas.clienteNombrePorRegistroId, conceptos_personal: mapas.clienteNombrePorConceptoId, anticipos_personal: mapas.clienteNombrePorAnticipoId };
   if (conCliente[tabla]) return conCliente[tabla].get(filaId) || null;
