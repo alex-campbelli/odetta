@@ -257,6 +257,8 @@ th.num{ text-align:right; }
 .combobox-opcion{ padding:8px 10px; border-radius:8px; font-size:.86rem; cursor:pointer; color:var(--ink); }
 .combobox-opcion:hover{ background:var(--surface-2); }
 .combobox-opcion mark{ background:var(--amber-soft); color:var(--amber); border-radius:4px; padding:0 2px; font-weight:600; }
+.combobox-opcion-agregar{ color:var(--accent-ink); font-weight:600; border-top:1px solid var(--line); margin-top:4px; padding-top:10px; }
+.combobox-opcion-agregar:hover{ background:var(--accent-soft); }
 .combobox-vacio{ padding:10px; font-size:.82rem; color:var(--ink-faint); text-align:center; }
 
 /* editor de presupuesto */
@@ -391,7 +393,11 @@ body.mostrando-app #contenedor-app{ display:contents; }
   thead{ display:table-header-group; }
 }
 </style>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<!-- Antes cargaba desde cdn.jsdelivr.net: en vivo, el navegador del usuario (Edge con "Tracking
+     Prevention") bloqueaba el acceso a almacenamiento de ese script de terceros, dejando
+     getSession() colgado ~15s en cada carga. Servirlo desde el mismo origen que index.html (mismo
+     archivo que se sube a GitHub Pages) quita ese origen cruzado por completo. -->
+<script src="supabase.min.js"></script>
 </head>
 <body>
 
@@ -437,7 +443,7 @@ body.mostrando-app #contenedor-app{ display:contents; }
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
       <span>Dashboard</span>
     </button>
-    <button class="nav-tab" data-action="ir-vista" data-vista="listado-clientes">
+    <button class="nav-tab" data-action="ir-clientes" data-vista="listado-clientes">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
       <span>Clientes</span>
     </button>
@@ -648,6 +654,7 @@ const ui = {
   clienteSubVista: 'presupuestos',
   catalogoSubVista: 'materiales',
   filtroCatalogo: '',
+  filtroCatalogoEstado: '',
   filtroClientes: '',
   modalItemId: null,
   modalPersonalId: null,
@@ -1754,6 +1761,20 @@ function restaurarUltimaVista() {
   mostrarVista(uv.vista);
 }
 
+// El nav-tab "Clientes" del costado, a diferencia del botón "← Listado" de adentro del editor
+// (que sí lleva siempre al listado completo a propósito), es más un "llévame a donde estaba" —
+// si hay un presupuesto o cliente activo (p.ej. saliste un momento a Catálogo a agregar un
+// material que faltaba), vuelve ahí directo en vez de mandar siempre al listado desde cero.
+function irAClientesInteligente() {
+  if (ui.presupuestoActivoId && state.presupuestos.find(p => p.id === ui.presupuestoActivoId)) {
+    mostrarVista('editor-presupuesto');
+  } else if (ui.clienteActivoId && encontrarCliente(ui.clienteActivoId)) {
+    mostrarVista('editor-cliente');
+  } else {
+    mostrarVista('listado-clientes');
+  }
+}
+
 /* ============================================================
    13. UTILIDAD — PRESUPUESTO ↔ CLIENTE
    ============================================================ */
@@ -2184,13 +2205,28 @@ function renderCatalogo() {
     return;
   }
 
-  const items = state.catalogo.filter(c => !filtro || c.nombre.toLowerCase().includes(filtro) || c.categoria.toLowerCase().includes(filtro));
+  const filtroEstado = ui.filtroCatalogoEstado || '';
+  const totalDescontinuados = state.catalogo.filter(c => c.estado === 'descontinuado').length;
+  // Los descontinuados no aparecen al buscar un material dentro de un presupuesto (para no
+  // cotizar por accidente algo que ya no se consigue — ver catalogoOpcionesPorFiltroItem()), pero
+  // sí siguen viéndose aquí para poder gestionarlos/reactivarlos. Este filtro deja confirmar de
+  // un vistazo cuáles son, en vez de tener que escanear la columna Estado fila por fila.
+  const selectorEstado = `
+    <select class="select" style="width:auto;margin-bottom:12px;" id="catalogo-filtro-estado">
+      <option value="">Todos los estados (${state.catalogo.length})</option>
+      <option value="activo" ${filtroEstado === 'activo' ? 'selected' : ''}>Solo activos</option>
+      <option value="descontinuado" ${filtroEstado === 'descontinuado' ? 'selected' : ''}>Solo descontinuados (${totalDescontinuados})</option>
+    </select>`;
+  const items = state.catalogo.filter(c =>
+    (!filtro || c.nombre.toLowerCase().includes(filtro) || c.categoria.toLowerCase().includes(filtro)) &&
+    (!filtroEstado || c.estado === filtroEstado)
+  );
   const hoy = new Date();
   if (items.length === 0) {
-    cont.innerHTML = toggle + `<div class="empty-state"><p>${state.catalogo.length === 0 ? 'El catálogo está vacío.' : `Ningún elemento coincide con "${esc(ui.filtroCatalogo)}".`}</p></div>`;
+    cont.innerHTML = toggle + selectorEstado + `<div class="empty-state"><p>${state.catalogo.length === 0 ? 'El catálogo está vacío.' : `Ningún elemento coincide con estos filtros.`}</p></div>`;
     return;
   }
-  cont.innerHTML = toggle + `<div class="table-wrap"><table>
+  cont.innerHTML = toggle + selectorEstado + `<div class="table-wrap"><table>
     <thead><tr><th>Nombre</th><th>Categoría</th><th>Und</th><th class="num">Precio habitual</th><th>Proveedor</th><th>Estado</th><th>Actualizado</th><th></th></tr></thead>
     <tbody>${items.map(c => {
       const dias = Math.floor((hoy - new Date(c.fechaActualizacion)) / 86400000);
@@ -2621,12 +2657,21 @@ function refrescarCombobox() {
   const el = _comboboxInputActivo;
   if (!el) return;
   const panel = document.getElementById('combobox-panel');
-  const consulta = el.value.trim().toLowerCase();
+  const textoEscrito = el.value.trim();
+  const consulta = textoEscrito.toLowerCase();
   const opciones = opcionesParaCombobox(el);
   const filtradas = (consulta ? opciones.filter(o => o.nombre.toLowerCase().includes(consulta)) : opciones).slice(0, COMBOBOX_LIMITE);
-  panel.innerHTML = filtradas.length === 0
+  // Si lo que se escribió no existe todavía en ningún catálogo, se ofrece crearlo ahí mismo — sin
+  // esto, la única forma de agregar algo que falta era salir a la vista de Catálogo, agregarlo, y
+  // volver a buscarlo desde cero (pedido explícito del usuario: no perder el lugar en el presupuesto).
+  const yaExiste = consulta && opciones.some(o => o.nombre.toLowerCase() === consulta);
+  const opcionAgregar = (consulta && !yaExiste)
+    ? `<div class="combobox-opcion combobox-opcion-agregar" data-action="agregar-catalogo-combobox" data-nombre="${esc(textoEscrito)}">+ Agregar "${esc(textoEscrito)}" al catálogo</div>`
+    : '';
+  const listaHtml = filtradas.map(o => `<div class="combobox-opcion" data-action="elegir-combobox" data-nombre="${esc(o.nombre)}">${resaltarCoincidencia(o.nombre, el.value)}</div>`).join('');
+  panel.innerHTML = (filtradas.length === 0 && !opcionAgregar)
     ? `<div class="combobox-vacio">Sin coincidencias</div>`
-    : filtradas.map(o => `<div class="combobox-opcion" data-action="elegir-combobox" data-nombre="${esc(o.nombre)}">${resaltarCoincidencia(o.nombre, el.value)}</div>`).join('');
+    : listaHtml + opcionAgregar;
   const rect = el.getBoundingClientRect();
   panel.style.left = Math.round(rect.left) + 'px';
   panel.style.top = Math.round(rect.bottom + 4) + 'px';
@@ -2650,6 +2695,64 @@ function elegirOpcionCombobox(nombre) {
     recalcularActivo();
     guardar();
   }
+  cerrarCombobox();
+  if (ui.modalItemId) renderModalItem();
+  renderEditor();
+}
+// Decide en cuál de los 3 catálogos crear un elemento nuevo desde el buscador, según el mismo
+// filtro que ya usan catalogoOpcionesPorFiltroItem()/catalogoOpcionesPorTipoRecurso() para decidir
+// qué mostrar. Sin un filtro específico (se está viendo la mezcla de los 3), se crea en
+// materiales por default — el catálogo más usado, y lo que ya asume "+ Agregar elemento" en la
+// propia vista de Catálogo.
+function tipoCatalogoParaCombobox(el) {
+  const p = presupuestoActivo();
+  if (!p) return 'materiales';
+  if (el.dataset.catalogoTarget === 'item') {
+    const f = encontrarItemGlobal(p, el.dataset.id);
+    const filtro = f && f.item.catalogoFiltro;
+    if (filtro === 'servicios') return 'servicios';
+    if (filtro === 'manoObra') return 'manoObra';
+    return 'materiales';
+  }
+  if (el.dataset.catalogoTarget === 'recurso') {
+    const f = encontrarItemGlobal(p, ui.modalItemId);
+    const r = f && encontrarRecurso(f.item, el.dataset.id);
+    if (r && r.tipo === 'Transporte') return 'servicios';
+    if (r && r.tipo === 'Mano de obra') return 'manoObra';
+    return 'materiales';
+  }
+  return 'materiales';
+}
+// Crea un elemento nuevo directamente en el catálogo correspondiente, con el texto ya escrito en
+// el buscador como nombre, y lo deja aplicado al ítem/recurso actual de una sola vez — sin salir
+// del presupuesto ni tener que ir a Catálogo y volver a buscarlo (pedido explícito del usuario).
+// Precio/unidad quedan en blanco, igual que "+ Agregar elemento" en Catálogo — se completan
+// editando el propio ítem ahí mismo (su precio ya queda seleccionable de inmediato) o más tarde
+// desde Catálogo.
+function crearCatalogoDesdeCombobox(nombre) {
+  const el = _comboboxInputActivo;
+  const texto = String(nombre || '').trim();
+  if (!el || !texto) return;
+  const tipo = tipoCatalogoParaCombobox(el);
+  let hit;
+  if (tipo === 'servicios') {
+    const s = { id: uid('serv'), nombre: texto };
+    state.catalogoServicios.unshift(s);
+    hit = { id: s.id, nombre: s.nombre, unidad: null, precio: null };
+  } else if (tipo === 'manoObra') {
+    const m = { id: uid('mocat'), nombre: texto, unidad: 'und', precio: 0 };
+    state.catalogoManoObra.unshift(m);
+    hit = { id: m.id, nombre: m.nombre, unidad: m.unidad, precio: m.precio };
+  } else {
+    const mat = { id: uid('cat'), nombre: texto, categoria: 'Materiales', unidad: 'und', precio: 0, proveedor: '', estado: 'activo', fechaActualizacion: hoyISO(), observaciones: '' };
+    state.catalogo.unshift(mat);
+    hit = { id: mat.id, nombre: mat.nombre, unidad: mat.unidad, precio: mat.precio };
+  }
+  const objetivo = el.dataset.catalogoTarget;
+  if (objetivo === 'item') aplicarCatalogoAItem(el.dataset.id, hit);
+  else if (objetivo === 'recurso') aplicarCatalogoAResurso(el.dataset.id, hit);
+  recalcularActivo();
+  guardar();
   cerrarCombobox();
   if (ui.modalItemId) renderModalItem();
   renderEditor();
@@ -3387,6 +3490,7 @@ document.body.addEventListener('click', e => {
 
   const acciones = {
     'ir-vista': () => mostrarVista(btn.dataset.vista),
+    'ir-clientes': () => irAClientesInteligente(),
     'crear-presupuesto': () => crearPresupuesto(),
     'abrir-presupuesto': () => abrirPresupuesto(id),
     'duplicar-presupuesto': () => duplicarPresupuesto(id),
@@ -3429,6 +3533,7 @@ document.body.addEventListener('click', e => {
     'catalogo-subvista': () => {
       ui.catalogoSubVista = btn.dataset.subvista;
       ui.filtroCatalogo = '';
+      ui.filtroCatalogoEstado = '';
       const filtroEl = document.getElementById('catalogo-filtro');
       if (filtroEl) filtroEl.value = '';
       renderCatalogo();
@@ -3449,6 +3554,7 @@ document.body.addEventListener('click', e => {
     'crear-anticipo-personal': () => crearAnticipoPersonal(),
     'eliminar-anticipo-personal': () => eliminarAnticipoPersonal(id),
     'elegir-combobox': () => elegirOpcionCombobox(btn.dataset.nombre),
+    'agregar-catalogo-combobox': () => crearCatalogoDesdeCombobox(btn.dataset.nombre),
     'cerrar-sesion': () => cerrarSesion(),
     'admin-subvista': () => {
       ui.adminSubVista = btn.dataset.subvista;
@@ -3558,6 +3664,8 @@ document.body.addEventListener('change', e => {
     cambiarEstadoPresupuesto(el.dataset.estadoPresupuestoId, el.value);
     return;
   }
+
+  if (el.id === 'catalogo-filtro-estado') { ui.filtroCatalogoEstado = el.value; renderCatalogo(); return; }
 
   if (el.id === 'auditoria-filtro-tabla') { ui.adminAuditoriaFiltroTabla = el.value; renderVistaAuditoria(); return; }
   if (el.id === 'auditoria-filtro-usuario') { ui.adminAuditoriaFiltroUsuario = el.value; renderVistaAuditoria(); return; }
