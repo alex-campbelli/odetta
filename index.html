@@ -331,24 +331,154 @@ th.num{ text-align:right; }
    display:contents hace que este div no pinte caja propia y sus hijos se comporten como si
    fueran hijos directos de body (con su display original intacto) en vez de heredar bloqueado
    a block/flex por adivinar mal cuál era el original. */
+/* Animación del logo: SOLO antes de mostrar el login (nunca si ya hay sesión y se está entrando
+   directo a la app) — mostrarPantallaLogin() la dispara a propósito, no aparece por su cuenta al
+   cargar la página. Cubre todo (z-index alto) mientras dura; #pantalla-cargando queda oculta
+   detrás mientras tanto para no renderizar nada de más. */
+#pantalla-intro{ display:none; position:fixed; inset:0; z-index:1000; align-items:center; justify-content:center; background:var(--surface); }
+body.mostrando-intro #pantalla-intro{ display:flex; }
+body.mostrando-intro #pantalla-cargando{ display:none; }
+#video-intro{ width:min(480px, 80vw); height:auto; }
 #pantalla-cargando{ display:flex; min-height:100vh; align-items:center; justify-content:center; color:var(--ink-faint); font-size:.9rem; background:var(--ground); }
-#pantalla-login{ display:none; min-height:100vh; align-items:center; justify-content:center; padding:24px; background:var(--ground); }
+#pantalla-login{ display:none; height:100vh; background:var(--ground); overflow:hidden; }
 #contenedor-app{ display:none; }
 body.mostrando-login #pantalla-cargando{ display:none; }
 body.mostrando-login #pantalla-login{ display:flex; }
+/* El login es una "composición cerrada" de una sola vista en escritorio — nunca debe hacer scroll
+   (pedido explícito). En móvil (ver media query más abajo) esto se revierte a scroll normal, ya
+   que ahí la foto pasa a ser una franja fija arriba y el formulario sigue debajo. */
+body.mostrando-login{ overflow:hidden; }
 body.mostrando-app #pantalla-cargando{ display:none; }
 body.mostrando-app #contenedor-app{ display:contents; }
-.login-card{ width:100%; max-width:400px; background:var(--surface); border-radius:20px; box-shadow:var(--shadow-modal); padding:40px 36px 36px; text-align:center; }
-.login-brand{ display:flex; flex-direction:column; align-items:center; gap:10px; margin-bottom:28px; }
-.login-brand img{ width:56px; height:56px; }
-.login-brand .word{ font-family:'Fraunces',serif; font-weight:600; font-size:1.3rem; color:var(--accent-strong); line-height:1.1; }
-.login-brand .word small{ display:block; font-family:'Archivo',sans-serif; font-weight:500; font-size:.72rem; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.08em; margin-top:2px; }
-.login-card h1{ font-size:1.3rem; margin-bottom:6px; }
-.login-sub{ color:var(--ink-soft); font-size:.86rem; margin-bottom:26px; }
-.login-form{ display:flex; flex-direction:column; gap:16px; text-align:left; }
-.login-form .field label{ font-size:.78rem; font-weight:600; color:var(--ink-soft); margin-bottom:5px; display:block; }
-.login-error{ background:var(--coral-soft); color:var(--coral); font-size:.82rem; padding:10px 14px; border-radius:10px; text-align:left; }
-.login-submit{ width:100%; justify-content:center; margin-top:6px; padding:12px; font-size:.95rem; }
+
+/* ---- Login: portada editorial (fotografía + panel), a propósito distinto del resto de la app,
+   que usa tarjetas con sombra — aquí se evita esa estética a propósito. Todo queda encerrado bajo
+   #pantalla-login para no tocar .input/.btn/.field compartidos por el resto del sistema. ---- */
+.login-visual{ position:relative; flex:0 0 50vw; overflow:hidden; background:#EDE9E0; }
+.login-visual-img{
+  width:100%; height:100%; object-fit:cover; object-position:center 72%; display:block;
+  animation:loginFotoAparece 1.2s ease both;
+}
+/* Transición diagonal hacia el marfil del panel — evita el corte recto entre foto y formulario */
+.login-visual::before{
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(115deg, transparent 62%, rgba(250,250,247,.5) 82%, var(--ground) 101%);
+}
+.login-visual::after{
+  content:''; position:absolute; inset:0; pointer-events:none; opacity:0;
+  background:linear-gradient(to bottom, transparent 65%, var(--ground) 100%); transition:opacity .3s ease;
+}
+.login-panel{ position:relative; flex:0 0 50vw; display:flex; align-items:center; justify-content:center; padding:48px; overflow:hidden; }
+/* Arco arquitectónico de fondo, casi imperceptible — se percibe más que se ve */
+.login-panel::after{
+  content:''; position:absolute; top:50%; right:-32%; width:520px; height:520px; max-width:50vw; max-height:50vw;
+  border:1px solid var(--accent); border-radius:50%; opacity:.11; transform:translateY(-50%); pointer-events:none; z-index:0;
+}
+/* Segunda línea arquitectónica: un trazo vertical muy fino, casi imperceptible, puramente
+   decorativo — igual que el arco, siempre detrás del contenido (z-index:0 vs. 1 del inner). */
+.login-panel::before{
+  content:''; position:absolute; top:9%; bottom:9%; left:83%; width:1px;
+  background:var(--line-strong); opacity:.13; pointer-events:none; z-index:0;
+}
+.login-panel-inner{ position:relative; z-index:1; width:100%; max-width:440px; animation:loginPanelAparece 1s ease .2s both; }
+@keyframes loginFotoAparece{ from{ opacity:0; transform:scale(1.025); } to{ opacity:1; transform:scale(1); } }
+@keyframes loginPanelAparece{ from{ opacity:0; transform:translateY(12px); } to{ opacity:1; transform:translateY(0); } }
+@media (prefers-reduced-motion: reduce){
+  .login-visual-img, .login-panel-inner{ animation:none; }
+}
+
+.login-brand{ display:flex; flex-direction:row; align-items:center; gap:18px; margin-bottom:40px; }
+.login-brand img{ width:58px; height:58px; flex-shrink:0; }
+.login-brand .word{ font-family:'Fraunces',serif; font-weight:600; font-size:1.85rem; color:var(--accent-strong); line-height:1.05; letter-spacing:-.01em; }
+.login-brand .word small{ display:block; font-family:'Archivo',sans-serif; font-weight:500; font-size:.66rem; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.16em; margin-top:7px; }
+#pantalla-login h1{ font-family:'Fraunces',serif; font-size:2.6rem; font-weight:600; color:var(--ink); line-height:1.1; letter-spacing:-.01em; margin-bottom:14px; text-wrap:balance; }
+.login-regla{ width:44px; height:2px; background:var(--accent); margin-bottom:20px; }
+.login-sub{ color:var(--ink-soft); font-size:.92rem; line-height:1.55; margin-bottom:32px; max-width:34ch; }
+.login-form{ display:flex; flex-direction:column; gap:24px; text-align:left; }
+.login-form .field label{
+  font-size:.66rem; font-weight:600; color:var(--ink-faint); margin-bottom:10px; display:block;
+  text-transform:uppercase; letter-spacing:.13em;
+}
+#pantalla-login .input{
+  border:1px solid var(--line-strong); border-radius:11px; background:var(--surface);
+  padding:17px 18px; font-size:.95rem; color:var(--ink); box-shadow:none;
+}
+#pantalla-login .input::placeholder{ color:var(--ink-faint); }
+#pantalla-login .input:focus{ border-color:var(--accent-strong); box-shadow:0 0 0 3px var(--accent-soft); outline:none; }
+.login-input-wrap{ position:relative; }
+.login-input-wrap .input{ padding-right:46px; }
+.login-toggle-clave{
+  position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none;
+  padding:8px; color:var(--ink-faint); cursor:pointer; display:flex; border-radius:8px; transition:color .15s ease;
+}
+.login-toggle-clave:hover{ color:var(--ink-soft); }
+.login-toggle-clave.is-activo{ color:var(--accent-strong); }
+.login-forgot{
+  display:inline-block; margin-top:11px; font-size:.78rem; color:var(--ink-faint);
+  text-decoration:none; border-bottom:1px solid transparent; transition:color .15s ease, border-color .15s ease;
+}
+.login-forgot:hover{ color:var(--accent-strong); border-color:var(--accent-strong); }
+.login-forgot-msg{ margin-top:9px; font-size:.78rem; color:var(--ink-soft); line-height:1.5; }
+.login-error{
+  background:transparent; color:var(--coral); font-size:.82rem; line-height:1.5;
+  padding:2px 0 2px 13px; border-radius:0; border-left:2px solid var(--coral); text-align:left;
+}
+.login-submit{
+  position:relative; width:100%; justify-content:center; margin-top:6px; padding:19px 46px 19px 20px;
+  font-size:.78rem; font-weight:600; letter-spacing:.14em; text-transform:uppercase; border-radius:10px;
+  background:var(--accent-strong); border-color:var(--accent-strong); box-shadow:none;
+  transition:background-color .25s ease, border-color .25s ease;
+}
+.login-submit::after{
+  content:'→'; position:absolute; right:22px; top:50%; transform:translateY(-50%);
+  font-size:1.05em; transition:transform .25s ease;
+}
+.login-submit:hover{ background:var(--accent-ink); border-color:var(--accent-ink); box-shadow:none; transform:none; }
+.login-submit:hover::after{ transform:translate(4px, -50%); }
+.login-footnote{
+  display:flex; align-items:center; gap:10px; margin-top:44px; padding-top:22px; border-top:1px solid var(--line);
+  font-size:.72rem; color:var(--ink-faint); letter-spacing:.02em;
+}
+.login-footnote::before{ content:''; width:2px; height:12px; background:var(--accent); flex-shrink:0; }
+
+/* La regla de "una sola vista sin scroll" (sección 17 del pedido) es explícitamente solo para
+   escritorio — en móvil la foto pasa a ser una franja fija arriba y el formulario sigue debajo
+   con scroll normal de página, el mismo patrón ya usado en iteraciones anteriores. Por eso se
+   revierte aquí tanto el overflow:hidden del body como el height:100vh fijo del contenedor. */
+@media (max-width:860px){
+  body.mostrando-login{ overflow:auto; }
+  #pantalla-login{ flex-direction:column; height:auto; min-height:100vh; overflow-x:hidden; overflow-y:auto; }
+  .login-visual{ flex:0 0 auto; height:36vh; min-height:210px; max-height:320px; }
+  .login-visual::before{ display:none; }
+  .login-visual::after{ opacity:1; }
+  .login-panel{ flex:1 1 auto; padding:40px 26px 48px; }
+  .login-panel::after{ display:none; }
+  .login-panel::before{ display:none; }
+  .login-panel-inner{ margin-bottom:0; }
+  .login-brand{ margin-bottom:38px; }
+  #pantalla-login h1{ font-size:1.9rem; }
+  .login-sub{ margin-bottom:32px; }
+  .login-footnote{ margin-top:38px; }
+}
+/* Compresión vertical solo para escritorio con poca altura (p.ej. portátiles ~768px) — nunca
+   scroll (pedido explícito), en su lugar se reduce el ritmo vertical manteniendo el mismo diseño. */
+@media (min-width:861px) and (max-height:820px){
+  .login-panel{ padding:32px 44px; }
+  .login-brand{ margin-bottom:26px; }
+  .login-brand img{ width:48px; height:48px; }
+  .login-brand .word{ font-size:1.55rem; }
+  #pantalla-login h1{ font-size:2.15rem; margin-bottom:10px; }
+  .login-regla{ margin-bottom:14px; }
+  .login-sub{ margin-bottom:22px; }
+  .login-form{ gap:16px; }
+  .login-submit{ padding:16px 44px 16px 18px; }
+  .login-footnote{ margin-top:24px; padding-top:16px; }
+}
+@media (max-width:480px){
+  .login-visual{ height:28vh; min-height:170px; }
+  .login-panel{ padding:32px 20px 40px; }
+  #pantalla-login h1{ font-size:1.5rem; }
+}
 .login-submit:disabled{ opacity:.6; cursor:default; }
 .sidebar-usuario{
   display:flex; align-items:center; gap:8px; margin-top:auto;
@@ -401,28 +531,48 @@ body.mostrando-app #contenedor-app{ display:contents; }
 </head>
 <body>
 
+<div id="pantalla-intro">
+  <video id="video-intro" muted playsinline>
+    <source src="logo-animado.mp4" type="video/mp4">
+  </video>
+</div>
+
 <div id="pantalla-cargando">Cargando…</div>
 
 <div id="pantalla-login" class="no-imprimir">
-  <div class="login-card">
+  <div class="login-visual">
+    <img class="login-visual-img" src="login-portada.jpg" alt="" fetchpriority="high">
+  </div>
+  <div class="login-panel">
+  <div class="login-panel-inner">
     <div class="login-brand">
       <img id="login-logo-placeholder" src="data:image/png;base64,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" alt="Odetta">
       <div class="word">Odetta<small>Presupuestos</small></div>
     </div>
     <h1>Iniciar sesión</h1>
+    <div class="login-regla" aria-hidden="true"></div>
     <p class="login-sub">Ingresa con tu cuenta de Odetta Arquitectura.</p>
     <form id="form-login" class="login-form">
       <div class="field">
         <label for="login-correo">Correo</label>
-        <input type="email" class="input" id="login-correo" autocomplete="username" required>
+        <input type="email" class="input" id="login-correo" autocomplete="username" placeholder="ejemplo@odetta.com" required>
       </div>
       <div class="field">
         <label for="login-clave">Contraseña</label>
-        <input type="password" class="input" id="login-clave" autocomplete="current-password" required>
+        <div class="login-input-wrap">
+          <input type="password" class="input" id="login-clave" autocomplete="current-password" placeholder="Ingresa tu contraseña" required>
+          <button type="button" class="login-toggle-clave" id="login-toggle-clave" tabindex="-1" aria-label="Mostrar contraseña">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+        <a href="#" class="login-forgot" id="login-forgot">¿Olvidaste tu contraseña?</a>
+        <p class="login-forgot-msg" id="login-forgot-msg" style="display:none;">Contacta a un administrador de Odetta para restablecer tu acceso.</p>
       </div>
       <div class="login-error" id="login-error" style="display:none;"></div>
       <button type="submit" class="btn btn-primary login-submit" id="login-submit">Entrar</button>
     </form>
+    <div class="login-footnote">Odetta Arquitectura — Montería, Córdoba</div>
+  </div>
   </div>
 </div>
 
@@ -3786,7 +3936,31 @@ window.addEventListener('scroll', e => {
 /* ============================================================
    18. AUTENTICACIÓN
    ============================================================ */
+// Antes de mostrar el login (nunca si ya hay sesión: continuarConSesion() nunca pasa por aquí)
+// reproduce una vez la animación del logo. Sin botón para saltarla — pedido explícito del usuario.
+// Sí tiene salidas de emergencia (fin real del video, que no cargue/no pueda reproducirse, o un
+// tiempo límite) para que nunca sea posible quedar sin poder llegar al formulario de login.
 function mostrarPantallaLogin(mensajeError) {
+  const video = document.getElementById('video-intro');
+  if (video && !document.body.classList.contains('intro-ya-mostrada')) {
+    document.body.classList.add('intro-ya-mostrada', 'mostrando-intro');
+    let yaTermino = false;
+    const terminar = () => {
+      if (yaTermino) return;
+      yaTermino = true;
+      clearTimeout(idTimeoutSeguridad); // si no, queda un temporizador de hasta 8s colgado sin motivo
+      document.body.classList.remove('mostrando-intro');
+      revelarPantallaLogin(mensajeError);
+    };
+    const idTimeoutSeguridad = setTimeout(terminar, 8000);
+    video.addEventListener('ended', terminar, { once: true });
+    video.currentTime = 0;
+    video.play().catch(terminar);
+    return;
+  }
+  revelarPantallaLogin(mensajeError);
+}
+function revelarPantallaLogin(mensajeError) {
   document.body.classList.remove('mostrando-app');
   document.body.classList.add('mostrando-login');
   const err = document.getElementById('login-error');
@@ -3870,6 +4044,30 @@ async function iniciarApp() {
   if (!session) { mostrarPantallaLogin(); return; }
   await continuarConSesion(session);
 }
+
+// Mostrar/ocultar contraseña: solo alterna el type del mismo input que el formulario ya envía tal
+// cual — no toca en nada la autenticación real, es puro detalle visual del campo. Declarada como
+// función nombrada (en vez de un arrow inline) para poder invocarla directo desde las pruebas.
+function alternarMostrarClave() {
+  const campo = document.getElementById('login-clave');
+  const boton = document.getElementById('login-toggle-clave');
+  const mostrando = campo.type === 'text';
+  campo.type = mostrando ? 'password' : 'text';
+  boton.classList.toggle('is-activo', !mostrando);
+  boton.setAttribute('aria-label', mostrando ? 'Mostrar contraseña' : 'Ocultar contraseña');
+}
+const botonMostrarClave = document.getElementById('login-toggle-clave');
+if (botonMostrarClave) botonMostrarClave.addEventListener('click', alternarMostrarClave);
+// "¿Olvidaste tu contraseña?": hoy no hay una recuperación de contraseña propia en la app (la
+// crean/gestionan solo los administradores), así que en vez de un enlace roto o inventar una
+// pantalla nueva, esto solo muestra un mensaje honesto de a quién pedirle ayuda.
+function alternarMensajeOlvideClave(e) {
+  e.preventDefault();
+  const msg = document.getElementById('login-forgot-msg');
+  if (msg) msg.style.display = msg.style.display === 'none' ? 'block' : 'none';
+}
+const enlaceOlvide = document.getElementById('login-forgot');
+if (enlaceOlvide) enlaceOlvide.addEventListener('click', alternarMensajeOlvideClave);
 
 document.getElementById('form-login').addEventListener('submit', async e => {
   e.preventDefault();
