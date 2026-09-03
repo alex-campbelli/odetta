@@ -1236,8 +1236,8 @@ function calcularRecurso(r) {
 function calcularApu(apu) {
   const costoDirecto = apu.recursos.reduce((s, r) => s + calcularRecurso(r), 0);
   apu._costoDirecto = redondear(costoDirecto);
-  const factor = numero(apu.factorMargen) || 1;
-  apu._precioUnitarioSugerido = redondear(costoDirecto / factor);
+  const factor = numero(apu.factorMargen) || 0;
+  apu._precioUnitarioSugerido = redondear(costoDirecto * (1 + factor));
   return apu._precioUnitarioSugerido;
 }
 function calcularItem(it) {
@@ -2135,7 +2135,7 @@ function renderModalItem() {
   if (!f) return;
   const it = f.item;
   const modal = document.getElementById('modal-content');
-  const margenPct = Math.round((1 - (numero(it.apu.factorMargen) || 1)) * 100);
+  const gananciaPct = Math.round((numero(it.apu.factorMargen) || 0) * 100);
   modal.innerHTML = `
     <div class="modal-head">
       <h3>${esc(it.descripcion) || 'Ítem sin descripción'}</h3>
@@ -2159,9 +2159,9 @@ function renderModalItem() {
       <div class="apu-summary">
         <div>Costo directo <b data-apu-costo-directo>${formatCOP(it.apu._costoDirecto)}</b></div>
         <div class="field" style="display:inline-flex;flex-direction:row;align-items:center;gap:8px;">
-          <label style="margin:0">Factor de margen</label>
+          <label style="margin:0">Factor de ganancia</label>
           <input class="input w-num" style="width:70px" data-entidad="apu" data-id="${it.id}" data-campo="factorMargen" data-numerico value="${it.apu.factorMargen}">
-          <span class="hint">(≈ ${margenPct}% de margen)</span>
+          <span class="hint">(ganancia del ${gananciaPct}% sobre el costo)</span>
         </div>
         <div>Precio unitario resultante <b data-apu-precio-resultante>${formatCOP(it.apu._precioUnitarioSugerido)}</b></div>
       </div>
@@ -3325,7 +3325,7 @@ const AUDITORIA_ETIQUETAS_CAMPO = {
   plazo_entrega: 'Plazo de entrega', forma_pago: 'Forma de pago', aplica_aiu: 'Aplica A.I.U.',
   persona_contacto: 'Persona de contacto', aiu_administracion: 'Administración (A.I.U.)',
   aiu_imprevistos: 'Imprevistos (A.I.U.)', aiu_utilidad: 'Utilidad (A.I.U.)',
-  iva_sobre_utilidad: 'IVA sobre utilidad', apu_factor_margen: 'Factor de margen'
+  iva_sobre_utilidad: 'IVA sobre utilidad', apu_factor_margen: 'Factor de ganancia'
 };
 function etiquetaCampoAuditoria(campo) {
   return AUDITORIA_ETIQUETAS_CAMPO[campo] || campo;
@@ -3616,7 +3616,7 @@ function renderAdminInstrucciones() {
       </p>
       <h2 style="font-size:1rem;margin-bottom:8px;">Roles actuales</h2>
       <p style="color:var(--ink-soft);margin-bottom:6px;"><b>Usuario</b> — acceso normal: clientes, presupuestos, catálogo y costos de personal.</p>
-      <p style="color:var(--ink-soft);margin-bottom:20px;"><b>Admin</b> — todo lo anterior, más crear usuarios y cambiarles el rol, ver la auditoría de quién hizo qué, descargar copias de seguridad manuales, y editar la configuración general de la empresa (AIU, IVA y margen por defecto).</p>
+      <p style="color:var(--ink-soft);margin-bottom:20px;"><b>Admin</b> — todo lo anterior, más crear usuarios y cambiarles el rol, ver la auditoría de quién hizo qué, descargar copias de seguridad manuales, y editar la configuración general de la empresa (AIU, IVA y ganancia por defecto).</p>
       <h2 style="font-size:1rem;margin-bottom:8px;">¿Necesitas un rol nuevo o un permiso distinto?</h2>
       <p style="color:var(--ink-soft);">
         Los roles se pueden ampliar más adelante según lo necesite el equipo. Si hace falta uno nuevo, coméntaselo a quien administra el sistema.
@@ -3668,7 +3668,7 @@ function renderAdminConfig() {
         ${campoPorcentaje('empresaAiu', '1', 'imprevistos', 'Imprevistos (A.I.U.) %', e.aiuDefecto.imprevistos)}
         ${campoPorcentaje('empresaAiu', '1', 'utilidad', 'Utilidad (A.I.U.) %', e.aiuDefecto.utilidad)}
         ${campoPorcentaje('empresa', '1', 'ivaSobreUtilidadDefecto', 'IVA sobre utilidad %', e.ivaSobreUtilidadDefecto)}
-        ${campoNumero('empresa', '1', 'factorMargenDefecto', 'Factor de margen por defecto', e.factorMargenDefecto)}
+        ${campoNumero('empresa', '1', 'factorMargenDefecto', 'Factor de ganancia por defecto', e.factorMargenDefecto)}
       </div>
       <div class="field" style="margin-top:14px;">
         <label>Forma de pago por defecto</label>
