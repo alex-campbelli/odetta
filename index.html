@@ -110,6 +110,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .nav-tab.is-active{ background:var(--accent-strong); color:#fff; border-color:var(--accent-strong); box-shadow:0 4px 12px -4px rgba(89,111,60,.45); }
 .solo-admin{ display:none; }
 body.es-admin .solo-admin{ display:block; }
+/* Supervisor: pantalla propia y nada más — solo ve su nav-tab (.solo-supervisor aparece), y los
+   3 tabs sin restricción de rol (Dashboard/Clientes/Catálogo) se ocultan solo para él. Auditoría/
+   Configuraciones ya quedan afuera solas (siguen exigiendo rol==='admin' arriba). */
+.solo-supervisor{ display:none; }
+body.es-supervisor .solo-supervisor{ display:flex; }
+body.es-supervisor .oculto-supervisor{ display:none; }
 
 main{ flex:1; min-width:0; max-width:1020px; padding:32px 32px 90px; }
 main:has([data-view="auditoria"].is-active){ max-width:1400px; }
@@ -283,6 +289,7 @@ th.num{ text-align:right; }
 .chapter-add-item{ margin-top:10px; }
 .price-btn{ border:1px solid var(--line-strong); background:var(--surface); border-radius:8px; padding:6px 10px; font-size:.83rem; cursor:pointer; display:inline-flex; align-items:center; gap:6px; font-family:'IBM Plex Mono',monospace; transition:border-color .12s ease; }
 .price-btn:hover{ border-color:var(--accent); background:var(--accent-soft); }
+.price-costo-directo{ font-size:.72rem; color:var(--ink-faint); margin-top:3px; text-align:right; }
 
 .chapters-toolbar{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
 
@@ -589,21 +596,25 @@ body.mostrando-app #contenedor-app{ display:contents; }
 <div class="app-shell">
 <aside class="app-sidebar no-imprimir">
   <nav class="app-nav">
-    <button class="nav-tab" data-action="ir-vista" data-vista="dashboard">
+    <button class="nav-tab oculto-supervisor" data-action="ir-vista" data-vista="dashboard">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
       <span>Dashboard</span>
     </button>
-    <button class="nav-tab" data-action="ir-clientes" data-vista="listado-clientes">
+    <button class="nav-tab oculto-supervisor" data-action="ir-clientes" data-vista="listado-clientes">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
       <span>Clientes</span>
     </button>
-    <button class="nav-tab" data-action="ir-vista" data-vista="catalogo">
+    <button class="nav-tab oculto-supervisor" data-action="ir-vista" data-vista="catalogo">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
       <span>Catálogo</span>
     </button>
     <button class="nav-tab solo-admin" data-action="ir-vista" data-vista="auditoria">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
       <span>Auditoría</span>
+    </button>
+    <button class="nav-tab solo-supervisor" data-action="ir-vista" data-vista="panel-supervisor">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+      <span>Mano de obra</span>
     </button>
   </nav>
   <img class="sidebar-watermark" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAMAAABrrFhUAAAAYFBMVEUfGRyBjkokHiAjHSB0dyt5hUV7h0ZvcmNqk0t8iEdZAACqqlUhHB7//wAA/wAceBz///9//3//AACAikhzf0IAAAAiHB56hkYkHiAiHB4hHB0jHB4iGxwiGx0jHR49AAD9sXIuAAAAIHRSTlMY/uKpB2GhCB7RAgNZAQEDAQIBvVQA/v79j27OL0+vBLl1tewAABMLSURBVHja3V2JtqM6rtUBcjKeW3Xfa4htMPz/X7YhJIEgGQ8yVDU9rFo5GfBGlrYGS1DucXUdAPYydJvfCmy7bt73/UUAvH8GoGm0VkrKvG3Nf9u8/7/+yqVUWjevt3b/IwB0T/FutJJtXVeVsF1VVedSPWHo/nIAxvs3S2/fC6/s1/im+olC95dLwLB2l4UvYaiyXDV/hAQUp+L6M/77WBTHH9cvV23lvfQ5ClUmNewKwD/X6/jOor+ekBzXJB+0zKqIxU9AqB8YdHsAcDwOAnA4fH+fz+e7+d/39+Fw6v90tWGgZc2w+CkGt24HCeif9+nwfb5/mev+uIZ/nb8P5m8/J0ryGVf/xiCNPrAAYES/OHzfX0ufXl8Gg375iBQ0smJe/QuDPIEYkACc+uWbZ3+nrq/796HXiZ/LF0mWP2JQK9gIAPNoD2d69eNuOB8GQZmsv8qqlJcBV8IGALgs/3F9FxMh6EqVdv0PCNomNQCnsvi+u11f98NUEzTp5H+KQauTAnAtT26P/wGBEYL3NtAbANBDkN/SAXAqD3ef6+t8Kt+qUG6CQC8FTSIA/i0PX3fP6/BC4FK2YsXPmTgGYvGKBwQ8ugCW+u/be/09Aq9dAJmgtJfxdFupeqe/ARMX6P+jh9hAnj+dRT8IGCwCLOQ/ZP0zBHBFaBRXY7vdIVyQ137OkxCKGYAiQP4fiuCFQIcrQpEBEfebBsCguakHCs7USHMCcA1dv7lOb2soMTYganALnxgUVJ5VmRsIQsTtA5g//9M9+Doff36silC05i+ud2REoXUUhCxqH0wB+CmKs4X3Gq9o4hUifGCiCGvszjPpF0qDW+6EgTGJ4ITtGgC0AeidPxMHOAxxAcpBMmrgtQmgQmVAeUQ1Hu/UbeUEgWKQgIIgQGb1h1MxiY99Uzzx+HN8bgKNmwLtH9cBnVcOkdQWYgH4h9gAX0Pwo48FXk/XYoiFFbinZDbB0c6JhQi6zUZmDhCoSABOqAUYPN6ymHr9vfdXHAhL8PYKFIpAFfagjBisQWD8A4gBwLi1hKfz+4jFyjB/aSYCuFewbgzJO13VBkHfDVYKYPRaWRDhwiOmMQ/T+AhuDPNgi7UabAvZBm/MClyvF3TIaInAXARIBC4xENiFwFsXgoUDfx3KwhIyRq3maYoATgeEDEdgFYIn4/YGAFmNeZyFNWj++3i2sSEbHYi4mta6D4TQIQBgJPh8LAp71gT70K9/Zncr+BEo7RbBOAdBACx3wGEe8EVjZ8tNcJyLzY0iRHEQ1IJLEbwA+FyKEebT2ocR52GhN26MhGhy27lNFWQeiuClAxB19u/qp5e20+D2kTvGCZGIDWc1tn0gssYPgOVu/jBoVOoYAe5Y/t/8TVJwaOvlpSxCICrtBcBSBdhNoE0LnBYfbDNWSuhkD3pjcPEBYLGOovzlBMBhqQQ+dAcVH4lHwGwvixAoDwn4+QRguZVJW+jAnghC1EYQohHapo5FYHwKv85WQmO7zl/r1oMgRLKMvyy6UNw8zOA9SAUgSgDnjyCSIaAzESMD8NgBxyULOjr9fIEAgIW3dAJS/PKTYxAYASisTo0VgE/7cSYelKjSIND1hlYEI5AAgILS2AyuC7UNwhGgtgC7BFCESLAkeYFUBGsIb6MDbHSg4kGAUgTC2IJufytgucnQOKmTgK3L2BOAs18wxJMH2AlRxoOAohCwIkwwwbszE/SSHXyrcpBim3ck6hBf4Oi4A9Z9AQdC1HIgcCGNgS0Ou4U3OCNEBAIsIkAWqVnSsrHxgGUwvfiMBzgRIpkWAdoYApkVcIkInRwiQm66igsBghDQMbjImODp7G8/ZSpS/JABAgHK1ERFhbFPndZ1h6RIcZdSBojogy0vsHY2Bs0LuKhOnLWlRkBZdcBv/8zQz+9iLTPkR4iYKCG5CxobAFc8N3j1zQ0WTj4EgYBgQoAIQKF8C8jg3ojAT0R22JsQZVwy4B6CC68PKFbrA/wNNhcpNgi4BgkdKkSOR6xC5IhWiPw6ls4xjColAtoVX1ipEqVrhL7uEQJAEyImUkwEoJalCbBaJvnVn40y+BTF6XRyrxILRiCPzRZYv74JrRMErzpBN+dNJiXF6NeLugupFP3qK0UPPpWibleblBSXmK1dfPm8VvhorxX+cq0VjuZsPJTQhW2lqBaPR0CnU4SfOyzJeYFY/73P7rPIALbHPhgxrFf9eJ+Z8UOgSpctQL/9w9DynRkqyqC8FhEjE+li5XM+yHZqrOC110xuAeZ1zUUAEC/HXw/8J0z+rQjwkGKsSG2mY5Ff+Tfg5Og1Sk4znBJCIjIwEwHus8NB8fw2S+cW6BURADza73d6/JQmsxlVVW0zhVNogWof4dY/4Ms00jgWaVirzzEzX8cYUABgLgSOHSRO2wcy40VArvcQuT68XlsPkf8/fEQK2INYLAigWgAQAOAGHl1k7kMXmVPJ1XSMSGxyuAWYIVAIAEYXN3MKfh2CH3gfoVNZxil/xxgZQ7YAIRrvjDlMncclBT+NnaS++05S92cnqSOsdZJiJETxJTRgkyyYlFw+EPjA+2feS2zc8uyrtyQN4/Ml0mIJYc6ah4NnC5Erru9ucj/X4vRTprjIGFm0W4A63fABwLgFY4/j8/vvHAi0tBqEhZiI7LYbAHjKLL6ERtN74PXNbzvM1qGGNbfNDexTtcCrvmj2x1zvhABFiCS/GlQzAD7eITK1FwIiBSUEcg8AkVA2kHd7rJ+mhHEIZNQeAEJLsESmm4aREMXdEbYH9ASA5d+Bg9qFPTYKgVuEUDaUXgHcX7BWl3qAHoaA5I+Vd4gdyN8ANAg6XezhVhEquFRDtii3ICfIIOBCF+2DQS5eAX7/b+pa9kixJpQAEFQRuAq1wh4bRQnDEUAKp4YkLCRQAZfZGbGwm+anhMuHPHwZUCqAr3A/DAFmStghtmV4zICmT+JYx6e+CXtsFCUMfTYNrgUBNTsxBgcJ8oe1ziH6s4Y+HEwJ6BGAz/0WE4SBOuN6bEpUnHHSFtWCgMXMIlRNwxngV4xxUlQJyAcAS0cgkAZdiJ4p1R9BCTVqBgClQaFVSspymp+VEgJLcFhkDwBaLh1oa6ocqFc4KSGyO2EAoGbSge1KpzPgjBLy3F/TAwCYZASov3qt4V/GSQm9K2pRLah7ADAdyKb+KwZKWDERIo0C0HHowAvRIYKBEHV8UcIG+w4DgGQIhynHLshBjWO4EsdLLmjECLBQQcOp/pNSwi7ODDwAWBJhb/afUe3k01JC3ye1eNRGIgExAjWHpTLJFcbGMRxpU2yz4wC0HPXOvYLFDENglDCPRwBT97XxBSI9AaJjougpBhrUCAxttgyEaLnUGjAAfKwgsf6xn1/Dd0IUGCrpFrdjbgXQiLDzXUkrVV+ZtbB5Jd0y9FcZOY0IB1Hqf5LOV4KREsa2YkKCQkYCwkPiVPBjVs6g+JqGgIhsxYQIEQKAIw0g2e8n18HnbeR8lNBDnmoMgIUznHUx7Pdz/URQI2OkhO6mYHkrZt5PYFJEOsdsiQZSjJTQGU1kuyMAtBEF7qhGIqiiYjxcoUMzpGb2URUAABWnIW6EkxJG9aST2BYIcNop9U9yvIaxDLiN6MSESUBAXpBS/yS/IQp/AhPHmQgGQGI6wPvkLqX+rdZIi7gO2HYE3LhlhwLQYGGiAPWfrRzySkkJHUXJHYDOv3PjOreTyRBw54LSSQfYACDUv4PmpPR3GxInndU9emwkucyAIADc/GPfbjY955o4MlOqom7KcABKVAJ8w7OufcxrflLsN2NrAUDtpQMo9e/ayZ7qqBlBij1LMfMl7UfNIHixf3GLjR/qwDpU7+laCwnISmczSKp/L1ve4IQoqAj2VnnPX26XtN+VCJHqz9OO6YTtpYPKtxBnSPp0K/W24yphe2l/CTCZoaU7LN2bl4eEtlTSLmp+EaEhOZqtu8NU6jMs0yd3Q2C5VgPAZT0iRHbtzsMqqfJ0zZU9o8JDgUS+AgDdt12xHg+Mn7niXyYlAMsLzMPiJPuPKKflpIQxFRKiQgGYFTOR6i/qCA8nJYywwb2w46mxy6r6i7TcScbwObhQSyVmzw6T6i9rUhyOE0InBUAhFh+QlGn7cewlic3agxJKgRVLL23D81QtVfiXsVisHShhu7SCF0ASZg8tSBY+cllsmbS1sFNqsBlqhVu0dooc3cPW83NzSvgp60MaGK0TrIEu/BO3xP0S0iEA6Jkh/DRRLipu+ueeNGzLjWiAfByawo4Uisg5jnEIyI2s4HhuECrXy32SZ2TRh9wmHPI8Ols7Frqm0NBQbUcJF/z7CYBjpa9PAD66p6jaSAfiZ4aqajPt3CUdw2dlXg/KD2RrW88Ol9BNLrC96EgJgbuHB8IDRwBg/bBHKr1kqSMTkDoa0rwaKLQi+qwHqNkF2IvajxAxq1wkKfICYFUJrNO/PBOTK8sf6fj5i5knHWBVOovfyB5eP1jOJb33o/K0sWIEYK7ha29KCAnbFY49WcDS09RHIxMAuBYgEnXAbUq/Y9pKy3rk00kbRQJAU8JLogZVT60GtqP6HrooEgCKEGXJ5m3M2+kBeerPVRPFSkDCycy4knkG38B+7NdZD8UDQFVCqzQqMJu31NSxyU8GAKijYTqFCnwRO6Abr3rRPwYAqDoyhjjpkuy/mA04j2JILwHpJjMvVeBLtYOl05QqNwaASpnFkmKwyDaQtQN+0S8eABJNZkYbB3wC8PEmX4ecCQCKEkYhgNjAetlcff7LAeeSZxfmDLmdxWn428qi/XOWvcWnCsg/+iXnvyCxX25jmqznJWMvxcnjBWweS4jEwexCX407Gib50rBTWQQkc7ZFuc6GlLAWtq+CJVJC7rp8usm64hKAKbGAhQnae/3Wycw8AiCJwSqD6Am1//rJucQBx8y0sM2Y+ZgyY372j1g/SYj83QKsnS49a0z1yb/Ln4GA4EFAiZWdBNZe2Lfc9Qd1LifX2Jwe5OzFG8MgQk8DjfXVn89dBXtvYOdqcJewuE97no44numJgFz18WClP4SrTYgLi6eazNyIVQRhrTuco1bkcoZYJzNDve7kw5pb5qh3UgAQPZkZfMfuov0x3MIRKQCgOmq6x8ql8Bq8TByRcMpOJJGA+NnU+WqzTJcTci6/lwgAqlNDKALLD4JDeySXCt5EAMTPppYrbc7BJTbrEJdNBQBVRRWGAPIpcBzVCzsB0MXPpn7fBXYqB5yG0/WK97KPBNCDCMEbAewj4Fq0pMq9AIifTT3eB0ogwNkZ17sBQDUPqv0QwDUZuDpiK9NSuJ0hJ0rohwD+CMG9cs+qdlRWT65xUpmev5jzDsnxcoykyPA3w351a9u2GL/dwAMAqHY84exFiKIjuOBletrdAKAO8Lvvq4sXAGZP/1kIdIkGEdLxgJQD4UMJUZJRjCnb2JZbpMwii4jAMzC9a+KIqmnWKQDoyMqxHREgKGGMDECAyMn90qYt+yhGsGZps4q5WCHaarfc88khZG7MjgUEZDdTSAIAVUe/JwIEJQztaABBgCc5Qhc5hi/QU4GwuYfRPSQSTGYO81SgDEVA7JZJ15xSCescvOLvo5OIEobsAgjedD0h2EsVSsF2uBWCx2jsqQiICFEIAhCheP26SZYb1JEFuIZQRiKQ/1GEyH9iNJRxCOwWJ4tOm/oBYDlgvZc1IOrI8kQAWBHIdxECPH+TpQKA7iuYugcYOd+72hYAurXY0N95Y4OoSTctHQDWI8ZGE3TbLb9pLfONu3QA2AZLmhMxW+0DkJbbaFJKgH20qtgmSmBbfkDiAnhiUk8IZLPB8m130KQGYDgfZoMgmUnst3YjK+t01wBKAmwZmicCyXzETucrs31D4tXAPmPZwDNshI734YOq10b7BsXrgV0PDRC0uuNcfafbanX5YfmKQHHVK72XTEGMYtsJjazF6mDnUJcEwjMUaxCIXEMZsReGz3WNqqv1sdZm20G5JQCXXgiy1YciWg3hiy9B55nD6s3yw5k4JGIkLwiqVjXTRTlD0Ki8Ei4jzWOWHwXAoAnWhdO8pZa66dZ/sHufOFbDo3fqclfF+WFxmgrcps4PILRKf56f7pvsfX5jo2RbOS4+fvmxAAw+suOtDijkUummWR4kN/OOGq1kXo9vdPzKKm8SVYn57ANXCEYU+nfXdd4+Dxrm5p91/fyb81cNhIvB0nIYaxdVgOAwv6rK8yuYiAbPl6jMewUxVy/7NyaexfU1G0LAsvW5AXByVphWz0iyOQEY1aFIu/rR0/wjAbg4BCxilx/KrDeSgFEZJMGAU+8lBcDVe/WV/JdH8ccD0D28uIoLg2H1Ol24Odk3a1lHg9B/PpdxUYXdAOj3gmorEQjC8LlM6uSZhsQ/AFo+QBCea6/b5+K7vxiA7uXh1m9HaM1DGNbebJZwh/SFjSMKo7eLekIPZOo2N84ydOUWT34zAOZrMT3ltFJStm3ePi/jF6s+WPKOEnRbFpqUGxa58rznrwXgtUjoVl/Z7vovvzYdRvaCt9UAAAAASUVORK5CYII=" alt="" aria-hidden="true">
@@ -692,6 +703,17 @@ body.mostrando-app #contenedor-app{ display:contents; }
     <div id="vista-costos-personal-contenido"></div>
   </section>
 
+  <!-- ================= VISTA: PANEL DE SUPERVISOR (mano de obra) ================= -->
+  <section data-view="panel-supervisor">
+    <div class="view-head">
+      <div>
+        <h1>Mano de obra</h1>
+        <div class="sub">Elige un cliente para ver sus presupuestos (solo PDF) y sus registros de mano de obra.</div>
+      </div>
+    </div>
+    <div id="panel-supervisor-contenido"></div>
+  </section>
+
   <!-- ================= VISTA: CONFIGURACIONES ================= -->
   <section data-view="admin">
     <div class="view-head">
@@ -753,6 +775,9 @@ const CAPITULOS_SUGERIDOS = [
 const TIPOS_RECURSO = ['Mano de obra', 'Material', 'Transporte', 'Equipo', 'Otro'];
 const ESTADOS_PRESUPUESTO = ['Borrador', 'Enviado', 'Aprobado', 'Rechazado'];
 const ESTADOS_CATALOGO = ['activo', 'descontinuado'];
+// Reutiliza los mismos tokens de color de los badges de estado de presupuesto (aprobado/enviado/
+// borrador/rechazado) para los 4 roles — son solo colores, no hace falta CSS nuevo.
+const BADGE_POR_ROL = { admin: 'aprobado', operario: 'enviado', supervisor: 'rechazado', usuario: 'borrador' };
 
 const CATALOGO_SEMILLA = [
   ['Cemento Argos 50kg', 'Materiales', 'bulto', 33500, ''],
@@ -1106,7 +1131,10 @@ async function cargar() {
 
   // Primer uso real (base de datos recién creada): siembra los catálogos con los materiales y
   // servicios ya conocidos de Odetta, igual que antes hacía estadoInicial() con localStorage.
-  const primerUso = clientes.length === 0 && presupuestos.length === 0 && state.catalogo.length === 0 && state.catalogoServicios.length === 0;
+  // Para supervisor, el catálogo SIEMPRE vuelve vacío (RLS no le da lectura, sin importar si la
+  // base de datos ya tiene datos reales) — sin este guard, cada login de un supervisor detectaría
+  // (mal) "primer uso" e intentaría sembrar catálogos semilla, lo cual además RLS le rechazaría.
+  const primerUso = (!ui.usuarioActual || ui.usuarioActual.rol !== 'supervisor') && clientes.length === 0 && presupuestos.length === 0 && state.catalogo.length === 0 && state.catalogoServicios.length === 0;
   if (primerUso) await sembrarCatalogosSiVacio();
 
   _ultimoEstadoSincronizado = clonarProfundo(state);
@@ -1753,7 +1781,10 @@ function cambiarModoPrecio(itemId, modo) {
   item.modoPrecio = modo;
   recalcularActivo(); guardar();
   renderModalItem();
-  refrescarNumerosEditor();
+  // No basta con refrescarNumerosEditor() (solo actualiza texto de nodos ya existentes): cambiar
+  // de modo agrega o quita el renglón "costo: $X" bajo el precio en la tabla, así que la fila
+  // necesita volver a construirse de verdad, igual que crearItem()/eliminarItem().
+  renderEditor();
 }
 function crearRecurso(itemId) {
   const p = presupuestoActivo();
@@ -1866,6 +1897,7 @@ function mostrarVista(nombre, params) {
   document.querySelectorAll('.nav-tab').forEach(el => el.classList.toggle('is-active',
     el.dataset.vista === nombre
     || (['editor-cliente', 'editor-presupuesto', 'vista-cliente', 'vista-costos-personal'].includes(nombre) && el.dataset.vista === 'listado-clientes')
+    || (nombre === 'vista-cliente' && el.dataset.vista === 'panel-supervisor')
   ));
   window.scrollTo(0, 0);
   // Recuerda dónde estabas para que recargar la página no te devuelva siempre al listado de
@@ -1892,22 +1924,31 @@ function mostrarVista(nombre, params) {
   else if (nombre === 'editor-cliente') renderEditorCliente();
   else if (nombre === 'admin') { renderVistaAdmin(); cargarUsuariosAdmin(); }
   else if (nombre === 'auditoria') { renderVistaAuditoria(); cargarAuditoria(); }
+  else if (nombre === 'panel-supervisor') renderPanelSupervisor();
 }
 function restaurarUltimaVista() {
   let uv = null;
   try { uv = JSON.parse(localStorage.getItem(STORAGE_KEY_ULTIMA_VISTA) || 'null'); } catch (e) { /* dato corrupto: cae al dashboard */ }
-  if (!uv || !uv.vista) { mostrarVista('dashboard'); return; }
+  // Supervisor no tiene Dashboard (muestra totales financieros de todos los presupuestos, fuera de
+  // su alcance) — su "inicio" es siempre su propio panel, no el dashboard general.
+  const vistaInicio = ui.usuarioActual && ui.usuarioActual.rol === 'supervisor' ? 'panel-supervisor' : 'dashboard';
+  if (!uv || !uv.vista) { mostrarVista(vistaInicio); return; }
   ui.clienteActivoId = uv.clienteActivoId || null;
   ui.presupuestoActivoId = uv.presupuestoActivoId || null;
   ui.vistaClienteId = uv.vistaClienteId || null;
   ui.clienteSubVista = uv.clienteSubVista || 'presupuestos';
   ui.catalogoSubVista = uv.catalogoSubVista || 'materiales';
 
-  if ((uv.vista === 'editor-cliente' || uv.vista === 'vista-costos-personal') && !encontrarCliente(ui.clienteActivoId)) { mostrarVista('dashboard'); return; }
-  if (uv.vista === 'editor-presupuesto' && !state.presupuestos.find(p => p.id === ui.presupuestoActivoId)) { mostrarVista('dashboard'); return; }
-  if (uv.vista === 'vista-cliente' && !state.presupuestos.find(p => p.id === ui.vistaClienteId)) { mostrarVista('dashboard'); return; }
+  // Supervisor solo tiene dos pantallas propias (su panel y ver-PDF de un presupuesto) — cualquier
+  // otra vista restaurada de una sesión previa (p.ej. si le cambiaron el rol después de guardarla)
+  // lo manda de vuelta a su panel en vez de dejarlo en una pantalla que ya no le corresponde.
+  if (vistaInicio === 'panel-supervisor' && uv.vista !== 'panel-supervisor' && uv.vista !== 'vista-cliente') { mostrarVista(vistaInicio); return; }
+
+  if ((uv.vista === 'editor-cliente' || uv.vista === 'vista-costos-personal') && !encontrarCliente(ui.clienteActivoId)) { mostrarVista(vistaInicio); return; }
+  if (uv.vista === 'editor-presupuesto' && !state.presupuestos.find(p => p.id === ui.presupuestoActivoId)) { mostrarVista(vistaInicio); return; }
+  if (uv.vista === 'vista-cliente' && !state.presupuestos.find(p => p.id === ui.vistaClienteId)) { mostrarVista(vistaInicio); return; }
   if (uv.vista === 'vista-costos-personal') { mostrarVista(uv.vista, { registroId: uv.vistaCostosPersonalRegistroId }); return; }
-  if ((uv.vista === 'admin' || uv.vista === 'auditoria') && (!ui.usuarioActual || ui.usuarioActual.rol !== 'admin')) { mostrarVista('dashboard'); return; }
+  if ((uv.vista === 'admin' || uv.vista === 'auditoria') && (!ui.usuarioActual || ui.usuarioActual.rol !== 'admin')) { mostrarVista(vistaInicio); return; }
   mostrarVista(uv.vista);
 }
 
@@ -2071,6 +2112,7 @@ function renderItemRow(it, codigoCap, idx, trabajadoresCliente = []) {
         <button class="price-btn" data-action="abrir-modal-item" data-id="${it.id}">
           <span class="price-num" data-price-item="${it.id}">${formatCOP(it._precioUnitario)}</span>${it.modoPrecio === 'apu' ? '<span class="tag-apu">APU</span>' : ''}
         </button>
+        ${it.modoPrecio === 'apu' ? `<div class="price-costo-directo" data-costo-item="${it.id}">costo: ${formatCOP(it.apu._costoDirecto)}</div>` : ''}
       </td>
       <td class="num" data-total-item="${it.id}">${formatCOP(it._total)}</td>
       <td>
@@ -2094,6 +2136,10 @@ function refrescarNumerosEditor() {
       if (totalEl) totalEl.textContent = formatCOP(it._total);
       const priceEl = document.querySelector(`[data-price-item="${it.id}"]`);
       if (priceEl) priceEl.textContent = formatCOP(it._precioUnitario);
+      if (it.modoPrecio === 'apu') {
+        const costoEl = document.querySelector(`[data-costo-item="${it.id}"]`);
+        if (costoEl) costoEl.textContent = `costo: ${formatCOP(it.apu._costoDirecto)}`;
+      }
     });
   });
   ['subtotal', 'admin', 'imprevistos', 'utilidad', 'ivaUtilidad', 'total'].forEach(k => {
@@ -2286,6 +2332,104 @@ function renderFilaAnticipoPersonal(a) {
       <td><input type="date" class="table-input" style="width:135px" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="fecha" value="${esc(a.fecha)}"></td>
       <td><button class="btn btn-icon btn-danger" data-action="eliminar-anticipo-personal" data-id="${a.id}" title="Eliminar">🗑</button></td>
     </tr>`;
+}
+
+/* ---------- panel de Supervisor: mano de obra + ver-PDF de presupuestos, nada más ---------- */
+// Reutiliza a propósito el mismo par de campos (ui.clienteActivoId/ui.modalPersonalId) que ya usan
+// clienteActivo()/registroPersonalActivo() — así el mecanismo genérico data-entidad="anticipoPersonal"
+// (ya usado por el modal de Admin/Usuario) funciona aquí sin tocarlo, mientras haya como mucho un
+// registro "abierto" a la vez en esta pantalla.
+function renderFilaAnticipoSupervisor(a) {
+  return `
+    <tr data-id="${a.id}">
+      <td><input class="table-input" style="min-width:170px" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="descripcion" value="${esc(a.descripcion)}" placeholder="Ej. Anticipo 1"></td>
+      <td><input class="table-input w-num" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="valor" data-numerico value="${a.valor}"></td>
+      <td><input type="date" class="table-input" style="width:135px" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="fecha" value="${esc(a.fecha)}"></td>
+    </tr>`;
+}
+function alternarRegistroSupervisor(registroId) {
+  ui.modalPersonalId = ui.modalPersonalId === registroId ? null : registroId;
+  renderPanelSupervisor();
+}
+function agregarAnticipoSupervisor() {
+  const r = registroPersonalActivo();
+  if (!r) return;
+  r.anticipos.push({ id: uid('an'), descripcion: '', valor: 0, fecha: hoyISO() });
+  recalcularRegistroPersonalActivo(); guardar();
+  renderPanelSupervisor();
+}
+function renderPanelSupervisor() {
+  const cont = document.getElementById('panel-supervisor-contenido');
+  if (!cont) return;
+  const c = clienteActivo();
+  if (c) c.manoDeObra.forEach(calcularRegistroPersonal);
+  const presDelCliente = c ? state.presupuestos.filter(p => p.clienteId === c.id) : [];
+  const registroAbierto = c ? c.manoDeObra.find(r => r.id === ui.modalPersonalId) || null : null;
+
+  cont.innerHTML = `
+    <div class="field" style="max-width:360px;margin-bottom:22px;">
+      <label>Cliente</label>
+      <select class="select" id="panel-supervisor-cliente">
+        <option value="">Selecciona un cliente…</option>
+        ${state.clientes.map(cl => `<option value="${cl.id}" ${cl.id === ui.clienteActivoId ? 'selected' : ''}>${esc(cl.nombre) || 'Sin nombre'}</option>`).join('')}
+      </select>
+    </div>
+    ${!c ? '' : `
+    <div class="editor-section">
+      <h2>Presupuestos</h2>
+      ${presDelCliente.length === 0 ? `<p style="color:var(--ink-faint);font-size:.9rem;">Este cliente todavía no tiene presupuestos.</p>` : `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Número</th><th>Proyecto</th><th>Estado</th><th class="num">Total</th><th></th></tr></thead>
+        <tbody>${presDelCliente.map(p => `
+          <tr>
+            <td class="mono">${esc(p.numero)}</td>
+            <td>${esc(p.proyecto)}</td>
+            <td><span class="badge badge-${p.estado.toLowerCase()}">${p.estado}</span></td>
+            <td class="num">${formatCOP(p._totales.total)}</td>
+            <td><button class="btn btn-sm" data-action="ver-cliente" data-id="${p.id}">Ver PDF</button></td>
+          </tr>`).join('')}</tbody>
+      </table></div>`}
+    </div>
+
+    <div class="editor-section">
+      <h2>Mano de obra</h2>
+      ${c.manoDeObra.length === 0 ? `<p style="color:var(--ink-faint);font-size:.9rem;">Este cliente todavía no tiene registros de mano de obra.</p>` : `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Trabajador</th><th class="num">Total a pagar</th><th class="num">Anticipado</th><th class="num">Saldo</th><th></th></tr></thead>
+        <tbody>${c.manoDeObra.map(r => `
+          <tr data-id="${r.id}">
+            <td><b>${esc(r.trabajador) || 'Sin nombre'}</b></td>
+            <td class="num">${formatCOP(r._totalXPagar)}</td>
+            <td class="num">${formatCOP(r._totalAnticipos)}</td>
+            <td class="num">${formatCOP(r._saldo)}</td>
+            <td><button class="btn btn-sm" data-action="panel-supervisor-abrir-registro" data-id="${r.id}">${ui.modalPersonalId === r.id ? 'Cerrar' : 'Abrir'}</button></td>
+          </tr>`).join('')}</tbody>
+      </table></div>`}
+      ${!registroAbierto ? '' : `
+      <div class="card" style="margin-top:14px;padding:18px 20px;">
+        <h3 style="margin-bottom:12px;">${esc(registroAbierto.trabajador) || 'Sin nombre'}</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Concepto</th><th>Und</th><th class="num">Cant.</th><th class="num">Precio unit.</th><th class="num">Total</th></tr></thead>
+          <tbody>${registroAbierto.conceptos.map(cp => `
+            <tr><td>${esc(cp.descripcion)}</td><td>${esc(cp.unidad)}</td><td class="num">${formatNum(cp.cantidad)}</td><td class="num">${formatCOP(cp.precioUnitario)}</td><td class="num">${formatCOP(cp._total)}</td></tr>`).join('') || `<tr><td colspan="5" style="color:var(--ink-faint);text-align:center;padding:14px;">Sin conceptos todavía.</td></tr>`}
+          </tbody>
+        </table></div>
+        <h4 class="modal-subhead" style="margin-top:18px;">Anticipos</h4>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Descripción</th><th class="num">Valor</th><th>Fecha</th></tr></thead>
+          <tbody>${registroAbierto.anticipos.map(renderFilaAnticipoSupervisor).join('') || `<tr><td colspan="3" style="color:var(--ink-faint);text-align:center;padding:14px;">Sin anticipos todavía.</td></tr>`}</tbody>
+        </table></div>
+        <div style="margin-top:10px;"><button class="btn btn-sm" data-action="agregar-anticipo-supervisor">+ Agregar anticipo</button></div>
+        <div class="summary-panel" style="position:static;margin-top:16px;padding:14px 18px;">
+          <div class="summary-grid">
+            <div class="summary-item"><span class="lbl">Total a pagar</span><span class="val">${formatCOP(registroAbierto._totalXPagar)}</span></div>
+            <div class="summary-item total"><span class="lbl">Saldo por pagar</span><span class="val">${formatCOP(registroAbierto._saldo)}</span></div>
+          </div>
+        </div>
+      </div>`}
+    </div>
+    `}
+  `;
 }
 
 /* ---------- helpers de campos de formulario ---------- */
@@ -2724,7 +2868,7 @@ function renderEditorCliente() {
                 <div class="row-actions">
                   <button class="btn btn-sm" data-action="abrir-presupuesto" data-id="${p.id}">Abrir</button>
                   <button class="btn btn-sm btn-ghost" data-action="duplicar-presupuesto" data-id="${p.id}" title="Duplicar">⧉</button>
-                  <button class="btn btn-sm btn-danger" data-action="eliminar-presupuesto" data-id="${p.id}" title="Eliminar">🗑</button>
+                  ${ui.usuarioActual && ui.usuarioActual.rol === 'operario' ? '' : `<button class="btn btn-sm btn-danger" data-action="eliminar-presupuesto" data-id="${p.id}" title="Eliminar">🗑</button>`}
                 </div>
               </td>
             </tr>`).join('')}
@@ -3010,6 +3154,8 @@ function renderModalEditarUsuario() {
         <div class="field"><label>Rol</label>
           <select class="select" id="editar-usuario-rol" ${esUnoMismo ? 'disabled title="No puedes cambiar tu propio rol desde aquí"' : ''}>
             <option value="usuario" ${u.rol === 'usuario' ? 'selected' : ''}>Usuario</option>
+            <option value="operario" ${u.rol === 'operario' ? 'selected' : ''}>Operario</option>
+            <option value="supervisor" ${u.rol === 'supervisor' ? 'selected' : ''}>Supervisor</option>
             <option value="admin" ${u.rol === 'admin' ? 'selected' : ''}>Admin</option>
           </select>
         </div>
@@ -3247,6 +3393,8 @@ function renderModalNuevoUsuario() {
         <div class="field"><label>Rol</label>
           <select class="select" id="nuevo-usuario-rol">
             <option value="usuario" selected>Usuario</option>
+            <option value="operario">Operario</option>
+            <option value="supervisor">Supervisor</option>
             <option value="admin">Admin</option>
           </select>
         </div>
@@ -3616,6 +3764,8 @@ function renderAdminInstrucciones() {
       </p>
       <h2 style="font-size:1rem;margin-bottom:8px;">Roles actuales</h2>
       <p style="color:var(--ink-soft);margin-bottom:6px;"><b>Usuario</b> — acceso normal: clientes, presupuestos, catálogo y costos de personal.</p>
+      <p style="color:var(--ink-soft);margin-bottom:6px;"><b>Operario</b> — igual que Usuario, salvo que no puede entrar a Configuraciones ni ver la Auditoría, y no puede eliminar un presupuesto completo (sí puede seguir agregando/eliminando capítulos, ítems y recursos dentro de uno).</p>
+      <p style="color:var(--ink-soft);margin-bottom:6px;"><b>Supervisor</b> — solo ve su propia pantalla de Mano de obra: puede ver (sin editar) el PDF final de los presupuestos de un cliente, y registrar anticipos/pagos de mano de obra. No ve catálogo, configuración ni el editor de presupuestos.</p>
       <p style="color:var(--ink-soft);margin-bottom:20px;"><b>Admin</b> — todo lo anterior, más crear usuarios y cambiarles el rol, ver la auditoría de quién hizo qué, descargar copias de seguridad manuales, y editar la configuración general de la empresa (AIU, IVA y ganancia por defecto).</p>
       <h2 style="font-size:1rem;margin-bottom:8px;">¿Necesitas un rol nuevo o un permiso distinto?</h2>
       <p style="color:var(--ink-soft);">
@@ -3639,7 +3789,7 @@ function renderAdminUsuarios() {
           <td><b>${esc(u.nombre) || 'Sin nombre'}</b>${u.id === ui.usuarioActual.id ? ' <span class="hint">(tú)</span>' : ''}</td>
           <td class="mono">${esc(u.email) || '—'}</td>
           <td>${esc(u.cargo) || '—'}</td>
-          <td><span class="badge badge-${u.rol === 'admin' ? 'aprobado' : 'borrador'}">${esc(u.rol)}</span></td>
+          <td><span class="badge badge-${BADGE_POR_ROL[u.rol] || 'borrador'}">${esc(u.rol)}</span></td>
           <td class="mono">${formatFechaCorta((u.created_at || '').slice(0, 10))}</td>
           <td><button class="btn btn-sm" data-action="abrir-modal-editar-usuario" data-id="${u.id}">Editar</button></td>
         </tr>`).join('')}</tbody>
@@ -3695,7 +3845,9 @@ document.body.addEventListener('click', e => {
     'duplicar-presupuesto': () => duplicarPresupuesto(id),
     'eliminar-presupuesto': () => eliminarPresupuesto(id),
     'ver-cliente': () => mostrarVista('vista-cliente', { presupuestoId: id }),
-    'volver-editor': () => mostrarVista('editor-presupuesto'),
+    // Supervisor nunca debe caer en el editor interactivo (RLS ya se lo bloquearía, pero además
+    // ahí vería precios/edición que su rol no debe ver) — vuelve a su propia pantalla en cambio.
+    'volver-editor': () => mostrarVista(ui.usuarioActual.rol === 'supervisor' ? 'panel-supervisor' : 'editor-presupuesto'),
     'volver-a-cliente': () => { if (id) { ui.clienteActivoId = id; mostrarVista('editor-cliente'); } else { mostrarVista('listado-clientes'); } },
     'imprimir': () => window.print(),
     'crear-capitulo': () => crearCapitulo(),
@@ -3752,6 +3904,8 @@ document.body.addEventListener('click', e => {
     'eliminar-concepto-personal': () => eliminarConceptoPersonal(id),
     'crear-anticipo-personal': () => crearAnticipoPersonal(),
     'eliminar-anticipo-personal': () => eliminarAnticipoPersonal(id),
+    'panel-supervisor-abrir-registro': () => alternarRegistroSupervisor(id),
+    'agregar-anticipo-supervisor': () => agregarAnticipoSupervisor(),
     'elegir-combobox': () => elegirOpcionCombobox(btn.dataset.nombre),
     'agregar-catalogo-combobox': () => crearCatalogoDesdeCombobox(btn.dataset.nombre),
     'cerrar-sesion': () => cerrarSesion(),
@@ -3868,6 +4022,7 @@ document.body.addEventListener('change', e => {
 
   if (el.id === 'auditoria-filtro-tabla') { ui.adminAuditoriaFiltroTabla = el.value; renderVistaAuditoria(); return; }
   if (el.id === 'auditoria-filtro-usuario') { ui.adminAuditoriaFiltroUsuario = el.value; renderVistaAuditoria(); return; }
+  if (el.id === 'panel-supervisor-cliente') { ui.clienteActivoId = el.value || null; ui.modalPersonalId = null; renderPanelSupervisor(); return; }
 
   if (el.tagName === 'SELECT') {
     const entidad = el.dataset.entidad, campo = el.dataset.campo, id = el.dataset.id;
@@ -3980,6 +4135,7 @@ function renderSidebarUsuario() {
   const cont = document.getElementById('sidebar-usuario');
   if (!cont || !ui.usuarioActual) return;
   document.body.classList.toggle('es-admin', ui.usuarioActual.rol === 'admin');
+  document.body.classList.toggle('es-supervisor', ui.usuarioActual.rol === 'supervisor');
   cont.innerHTML = `
     <div class="avatar-mini" style="overflow:hidden;">${ui.usuarioActual.avatar_url ? `<img src="${esc(ui.usuarioActual.avatar_url)}" style="width:100%;height:100%;object-fit:cover;">` : esc(iniciales(ui.usuarioActual.nombre))}</div>
     <div class="info">
@@ -4029,7 +4185,7 @@ async function continuarConSesion(session, esLoginFresco) {
   // Un login recién hecho siempre aterriza en el Dashboard (para tener un punto de partida
   // consistente); recuperar una sesión ya existente (recargar la página, volver a abrir la
   // pestaña) sí recuerda dónde estabas, para no perder el lugar en medio de una edición.
-  if (esLoginFresco) mostrarVista('dashboard');
+  if (esLoginFresco) mostrarVista(ui.usuarioActual.rol === 'supervisor' ? 'panel-supervisor' : 'dashboard');
   else restaurarUltimaVista();
 }
 
