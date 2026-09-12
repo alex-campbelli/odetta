@@ -898,12 +898,20 @@ const fmtNum = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2 });
 function formatNum(n) { return fmtNum.format(numero(n)); }
 
 // Contraparte de lectura de aplicarCampo(): busca el valor real guardado en el state para un campo
-// con formato de pesos (usado por los precios del catálogo, ver data-formato-cop más abajo).
+// con formato de pesos (los precios del catálogo y el valor de un anticipo, ver data-formato-cop más
+// abajo). Devuelve null si no sabe leer esa entidad, y quien llama entonces NO toca lo que hay en
+// pantalla: devolver 0 en ese caso mostraría un "0" que no es el dato real (fue exactamente el bug
+// que apareció al poner data-formato-cop en los anticipos sin agregarlos también acá).
 function leerCampoCOP(el) {
   const entidad = el.dataset.entidad, id = el.dataset.id, campo = el.dataset.campo;
-  if (entidad === 'catalogo') { const c = encontrarCatalogo(id); return c ? numero(c[campo]) : 0; }
-  if (entidad === 'catalogoManoObra') { const c = state.catalogoManoObra.find(x => x.id === id); return c ? numero(c[campo]) : 0; }
-  return 0;
+  if (entidad === 'catalogo') { const c = encontrarCatalogo(id); return c ? numero(c[campo]) : null; }
+  if (entidad === 'catalogoManoObra') { const c = state.catalogoManoObra.find(x => x.id === id); return c ? numero(c[campo]) : null; }
+  if (entidad === 'anticipoPersonal') {
+    const r = registroPersonalActivo();
+    const a = r ? r.anticipos.find(x => x.id === id) : null;
+    return a ? numero(a[campo]) : null;
+  }
+  return null;
 }
 
 function formatFechaCorta(iso) {
@@ -1179,12 +1187,41 @@ function calcularDiff(filasActuales, filasAnteriores) {
   const borrar = filasAnteriores.filter(f => !idsActuales.has(f.id)).map(f => f.id);
   return { cambios, borrar };
 }
+// Realtime devuelve MIS propios cambios como un evento más (Supabase no excluye a quien los hizo).
+// Volver a fusionar eso no es solo inútil, es destructivo: el guardado sale cada 500ms, así que el
+// eco de un valor intermedio (el "5" de un "50000" que sigo tecleando) llega cuando ya escribí más,
+// y al aplicarlo pisa tanto `state` como la foto sincronizada — dejando al diff sin nada que mandar
+// y al valor viejo como definitivo. Por eso cada fila que yo escribo queda anotada acá y su primer
+// eco se descarta. Se cuenta cuántas escrituras propias van pendientes de eco (dos guardados
+// seguidos de la misma fila producen dos ecos); la hora solo es red de seguridad, para no quedar
+// sordo a una fila para siempre si un eco nunca llega (evento perdido, reconexión, RLS).
+const _escriturasPropias = new Map(); // id de fila -> { pendientes, hora }
+const ESPERA_ECO_MS = 8000;
+function anotarEscrituraPropia(ids) {
+  const ahora = Date.now();
+  ids.forEach(id => {
+    const previo = _escriturasPropias.get(String(id));
+    const vigentes = previo && ahora - previo.hora < ESPERA_ECO_MS ? previo.pendientes : 0;
+    _escriturasPropias.set(String(id), { pendientes: vigentes + 1, hora: ahora });
+  });
+}
+function esEcoDeEscrituraPropia(id) {
+  const anotado = _escriturasPropias.get(String(id));
+  if (!anotado) return false;
+  if (Date.now() - anotado.hora > ESPERA_ECO_MS) { _escriturasPropias.delete(String(id)); return false; }
+  if (anotado.pendientes <= 1) _escriturasPropias.delete(String(id));
+  else anotado.pendientes -= 1;
+  return true;
+}
+
 async function aplicarDiff(tabla, diff) {
   if (diff.borrar.length) {
+    anotarEscrituraPropia(diff.borrar);
     const { error } = await sb.from(tabla).delete().in('id', diff.borrar);
     if (error) throw new Error(`Borrando en ${tabla}: ${error.message}`);
   }
   if (diff.cambios.length) {
+    anotarEscrituraPropia(diff.cambios.map(f => f.id));
     const { error } = await sb.from(tabla).upsert(diff.cambios);
     if (error) throw new Error(`Guardando en ${tabla}: ${error.message}`);
   }
@@ -1222,6 +1259,7 @@ async function guardar() {
       await aplicarDiff('catalogo_mano_obra', calcularDiff(state.catalogoManoObra.map(objetoAFilaCatalogoManoObra), anterior.catalogoManoObra.map(objetoAFilaCatalogoManoObra)));
 
       if (JSON.stringify(state.empresa) !== JSON.stringify(anterior.empresa)) {
+        anotarEscrituraPropia([1]); // empresa_config es siempre la fila id=1
         const { error } = await sb.from('empresa_config').update({
           consecutivo_presupuesto: state.empresa.consecutivoPresupuesto,
           aiu_administracion_defecto: numero(state.empresa.aiuDefecto.administracion),
@@ -1462,6 +1500,18 @@ function reemplazarFilaSiNoEnfocada(selectorFila, htmlNuevo) {
   return true;
 }
 
+// Las tres tablas de costos de personal, que se ven juntas en la misma pantalla/modal.
+const TABLAS_PERSONAL = ['registros_personal', 'conceptos_personal', 'anticipos_personal'];
+
+// ¿Está el modal de costos de personal pintado en el overlay AHORA MISMO? Se detecta por su propio
+// botón "Listo", que solo existe en renderModalPersonal(). Preguntarlo así (y no por
+// ui.modalPersonalId) es a propósito: ese campo también lo usa el panel de Supervisor para expandir
+// un registro en la misma página sin abrir ningún modal, y el overlay puede estar mostrando otra
+// cosa encima (un "¿Eliminar?", un aviso) que no hay que sobreescribir.
+function modalPersonalEstaPintado() {
+  return !!document.querySelector('[data-action="cerrar-modal-personal"]');
+}
+
 const VISTAS_REALTIME_SOLO_LECTURA = {
   'vista-cliente': { tablas: ['presupuestos', 'capitulos', 'items', 'recursos_apu'], render: () => renderVistaCliente() },
   'vista-costos-personal': { tablas: ['registros_personal', 'conceptos_personal', 'anticipos_personal'], render: () => renderVistaCostosPersonal() },
@@ -1480,6 +1530,14 @@ const CONFIG_CATALOGO_REALTIME = {
 // momento — si lo tiene, se deja tal cual por ahora (el dato ya quedó bien fusionado en memoria, se
 // ve correcto la próxima vez que se entre o se navegue a otra pantalla y se vuelva).
 function pintarCambioRealtime(tabla, evento, fila) {
+  // El modal de costos de personal se atiende primero y aparte: vive en el overlay compartido, no
+  // dentro del contenedor de ninguna vista, así que ninguna de las reglas de abajo lo alcanza. Se
+  // repinta entero (un anticipo nuevo de otra persona es una fila que todavía no existe en la
+  // tabla, no algo que se pueda parchar fila por fila) y solo si nadie está escribiendo ahí dentro.
+  if (TABLAS_PERSONAL.includes(tabla) && modalPersonalEstaPintado() && !algoEnfocadoDentroDe('modal-content')) {
+    renderModalPersonal();
+  }
+
   const lectura = VISTAS_REALTIME_SOLO_LECTURA[ui.vista];
   if (lectura && lectura.tablas.includes(tabla)) { lectura.render(); return; }
 
@@ -1496,12 +1554,14 @@ function pintarCambioRealtime(tabla, evento, fila) {
     return;
   }
 
-  if (ui.vista === 'editor-cliente' && ['clientes', 'presupuestos', 'registros_personal'].includes(tabla)) {
+  // La pestaña de mano de obra del editor de cliente muestra el saldo de cada trabajador, que
+  // cambia con cualquiera de las tres tablas de personal — no solo con registros_personal.
+  if (ui.vista === 'editor-cliente' && ['clientes', 'presupuestos', ...TABLAS_PERSONAL].includes(tabla)) {
     if (!algoEnfocadoDentroDe('editor-cliente-contenido')) renderEditorCliente();
     return;
   }
 
-  if (ui.vista === 'panel-supervisor' && ['clientes', 'presupuestos', 'registros_personal', 'conceptos_personal', 'anticipos_personal'].includes(tabla)) {
+  if (ui.vista === 'panel-supervisor' && ['clientes', 'presupuestos', ...TABLAS_PERSONAL].includes(tabla)) {
     if (!algoEnfocadoDentroDe('panel-supervisor-contenido')) renderPanelSupervisor();
     return;
   }
@@ -1516,6 +1576,7 @@ function manejarCambioRealtime(payload) {
   const evento = payload.eventType; // 'INSERT' | 'UPDATE' | 'DELETE'
   const fila = evento === 'DELETE' ? payload.old : payload.new;
   if (!fila || !fila.id) return; // DELETE sin REPLICA IDENTITY FULL en la tabla: no hay ni id, no se puede ubicar nada
+  if (esEcoDeEscrituraPropia(fila.id)) return; // mi propio cambio volviendo: ya está aplicado, y reaplicarlo pisaría lo que siga escribiendo
   const fusionar = REALTIME_TABLAS[tabla];
   if (!fusionar) return;
   fusionar(evento, fila);
@@ -2515,6 +2576,14 @@ function refrescarModalPersonal() {
     const el = document.querySelector(`[data-personal="${k}"]`);
     if (el) el.textContent = formatCOP(valores[k]);
   });
+  // En el panel de Supervisor el mismo registro aparece además en la tabla de trabajadores de
+  // arriba: sin esto, el saldo de esa fila se quedaba con el valor viejo mientras el de abajo ya
+  // había cambiado, mostrando dos números distintos para lo mismo en la misma pantalla.
+  const porRegistro = { 'total-x-pagar': r._totalXPagar, 'total-anticipos': r._totalAnticipos, saldo: r._saldo };
+  Object.keys(porRegistro).forEach(k => {
+    const el = document.querySelector(`[data-${k}-registro="${r.id}"]`);
+    if (el) el.textContent = formatCOP(porRegistro[k]);
+  });
 }
 
 /* ---------- modal de precio de ítem ---------- */
@@ -2750,9 +2819,9 @@ function renderPanelSupervisor() {
         <tbody>${c.manoDeObra.map(r => `
           <tr data-id="${r.id}">
             <td><b>${esc(r.trabajador) || 'Sin nombre'}</b></td>
-            <td class="num">${formatCOP(r._totalXPagar)}</td>
-            <td class="num">${formatCOP(r._totalAnticipos)}</td>
-            <td class="num">${formatCOP(r._saldo)}</td>
+            <td class="num" data-total-x-pagar-registro="${r.id}">${formatCOP(r._totalXPagar)}</td>
+            <td class="num" data-total-anticipos-registro="${r.id}">${formatCOP(r._totalAnticipos)}</td>
+            <td class="num" data-saldo-registro="${r.id}">${formatCOP(r._saldo)}</td>
             <td><button class="btn btn-sm" data-action="panel-supervisor-abrir-registro" data-id="${r.id}">${ui.modalPersonalId === r.id ? 'Cerrar' : 'Abrir'}</button></td>
           </tr>`).join('')}</tbody>
       </table></div>`}
@@ -2773,8 +2842,8 @@ function renderPanelSupervisor() {
         <div style="margin-top:10px;"><button class="btn btn-sm" data-action="agregar-anticipo-supervisor">+ Agregar anticipo</button></div>
         <div class="summary-panel" style="position:static;margin-top:16px;padding:14px 18px;">
           <div class="summary-grid">
-            <div class="summary-item"><span class="lbl">Total a pagar</span><span class="val">${formatCOP(registroAbierto._totalXPagar)}</span></div>
-            <div class="summary-item total"><span class="lbl">Saldo por pagar</span><span class="val">${formatCOP(registroAbierto._saldo)}</span></div>
+            <div class="summary-item"><span class="lbl">Total a pagar</span><span class="val" data-personal="totalXPagar">${formatCOP(registroAbierto._totalXPagar)}</span></div>
+            <div class="summary-item total"><span class="lbl">Saldo por pagar</span><span class="val" data-personal="saldo">${formatCOP(registroAbierto._saldo)}</span></div>
           </div>
         </div>
       </div>`}
@@ -4414,7 +4483,7 @@ document.body.addEventListener('focusout', e => {
   }
   // Precios del catálogo con formato de pesos: al salir del campo se vuelve a mostrar formateado
   // ("33.500"), mientras que mientras se edita se ve el número crudo (ver el focusin de abajo).
-  if (el.dataset.formatoCop !== undefined) el.value = formatNum(leerCampoCOP(el));
+  if (el.dataset.formatoCop !== undefined) { const v = leerCampoCOP(el); if (v !== null) el.value = formatNum(v); }
   if (el === _comboboxInputActivo) cerrarCombobox();
   if (campoIdentidad(el)) transmitirPresencia(null);
 });
@@ -4424,7 +4493,7 @@ document.body.addEventListener('focusout', e => {
 // una opción — si lo perdiera, este mismo focusout cerraría el panel antes de que el click llegue.
 document.body.addEventListener('focusin', e => {
   if (e.target.dataset.catalogoTarget) abrirCombobox(e.target);
-  if (e.target.dataset.formatoCop !== undefined) e.target.value = leerCampoCOP(e.target);
+  if (e.target.dataset.formatoCop !== undefined) { const v = leerCampoCOP(e.target); if (v !== null) e.target.value = v; }
   const identidad = campoIdentidad(e.target);
   if (identidad) transmitirPresencia(identidad);
 });
