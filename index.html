@@ -4276,7 +4276,7 @@ function renderModalEditarUsuario() {
       <button class="btn btn-icon btn-ghost" data-action="cerrar-modal-editar-usuario">✕</button>
     </div>
     <div class="field-avatar-editor">
-      <div class="avatar-mini avatar-mini-lg" style="overflow:hidden;cursor:pointer;" data-action="elegir-avatar" title="Cambiar foto">
+      <div class="avatar-mini avatar-mini-lg" style="${estiloAvatar(u)}cursor:pointer;" data-action="elegir-avatar" title="Cambiar foto">
         ${u.avatar_url ? `<img src="${esc(u.avatar_url)}" style="width:100%;height:100%;object-fit:cover;">` : esc(iniciales(u.nombre))}
       </div>
       <div>
@@ -4332,11 +4332,14 @@ async function guardarEdicionUsuario() {
   ui.modalEditarUsuarioError = null;
   renderModalEditarUsuario();
 
+  let faltaColumnaColor = false;
   let { error } = await sb.from('profiles').update({ nombre, cargo, rol, color: tono }).eq('id', id);
   if (esColumnaQueFalta(error, 'color')) {
     // Sin la columna todavía: se guarda todo lo demás en vez de fallar entero por el color.
     ({ error } = await sb.from('profiles').update({ nombre, cargo, rol }).eq('id', id));
-    if (!error) console.warn('El color no se guardó: falta correr agregar-color-de-usuario.sql en Supabase.');
+    // Se avisa en pantalla, no solo en la consola: si no, elegir un color parecía funcionar
+    // (decía "Guardado") pero el color no cambiaba nunca, sin ninguna explicación a la vista.
+    if (!error) faltaColumnaColor = true;
   }
   ui.modalEditarUsuarioEnviando = false;
   if (error) {
@@ -4344,9 +4347,18 @@ async function guardarEdicionUsuario() {
     renderModalEditarUsuario();
     return;
   }
+  const colorGuardado = faltaColumnaColor ? usuario.color : tono;
   usuario.nombre = nombre;
   usuario.cargo = cargo;
   usuario.rol = rol;
+  usuario.color = colorGuardado;
+  // Si me cambié el color a mí mismo, hay que actualizarlo en la sesión y volver a anunciarlo: si
+  // no, las demás personas seguirían viéndome del color anterior hasta que yo recargara la página.
+  if (ui.usuarioActual && ui.usuarioActual.id === id) {
+    ui.usuarioActual.color = colorGuardado;
+    renderSidebarUsuario();
+    enviarPresenciaAhora();
+  }
 
   // El nombre para la app ya quedó guardado en profiles (arriba). Además se refleja en el
   // "Display name" que Supabase muestra en su propio Dashboard (Authentication > Users) — eso
@@ -4360,6 +4372,9 @@ async function guardarEdicionUsuario() {
     renderSidebarUsuario();
   }
   cerrarModalEditarUsuario();
+  if (faltaColumnaColor) {
+    mostrarAviso('Se guardaron los datos, pero el color todavía no: falta correr una vez el archivo "agregar-color-de-usuario.sql" en Supabase. Mientras tanto, cada persona conserva su color automático.');
+  }
   renderVistaAdmin();
 }
 
@@ -4940,7 +4955,7 @@ function renderAdminUsuarios() {
       <thead><tr><th></th><th>Nombre</th><th>Correo</th><th>Cargo</th><th>Rol</th><th>Creado</th><th></th></tr></thead>
       <tbody>${ui.adminUsuarios.map(u => `
         <tr>
-          <td><div class="avatar-mini" style="overflow:hidden;background:${colorParaUsuario(u.id, u.color).avatar}" title="Así se ve esta persona para los demás">${u.avatar_url ? `<img src="${esc(u.avatar_url)}" style="width:100%;height:100%;object-fit:cover;">` : esc(iniciales(u.nombre))}</div></td>
+          <td><div class="avatar-mini" style="${estiloAvatar(u)}" title="Así se ve esta persona para los demás">${u.avatar_url ? `<img src="${esc(u.avatar_url)}" style="width:100%;height:100%;object-fit:cover;">` : esc(iniciales(u.nombre))}</div></td>
           <td><b>${esc(u.nombre) || 'Sin nombre'}</b>${u.id === ui.usuarioActual.id ? ' <span class="hint">(tú)</span>' : ''}</td>
           <td class="mono">${esc(u.email) || '—'}</td>
           <td>${esc(u.cargo) || '—'}</td>
@@ -5294,6 +5309,17 @@ function revelarPantallaLogin(mensajeError) {
   if (campoCorreo) campoCorreo.focus();
 }
 
+/* Cómo se pinta el círculo de una persona con su color:
+   - sin foto, el círculo entero va de su color (las iniciales en blanco encima);
+   - con foto, se le pone un aro grueso de ese color alrededor, para que igual se reconozca de quién
+     es sin tapar la cara. El aro va con box-shadow y no con border porque así no cambia el tamaño
+     del círculo ni descuadra lo que tiene al lado. */
+function estiloAvatar(persona) {
+  const color = colorParaUsuario(persona.id, persona.color).avatar;
+  return persona.avatar_url
+    ? `overflow:hidden;box-shadow:0 0 0 3px ${color};`
+    : `overflow:hidden;background:${color};`;
+}
 function iniciales(nombre) {
   const partes = String(nombre || '').trim().split(/\s+/).filter(Boolean);
   if (partes.length === 0) return '?';
@@ -5306,7 +5332,7 @@ function renderSidebarUsuario() {
   document.body.classList.toggle('es-admin', ui.usuarioActual.rol === 'admin');
   document.body.classList.toggle('es-supervisor', ui.usuarioActual.rol === 'supervisor');
   cont.innerHTML = `
-    <div class="avatar-mini" style="overflow:hidden;">${ui.usuarioActual.avatar_url ? `<img src="${esc(ui.usuarioActual.avatar_url)}" style="width:100%;height:100%;object-fit:cover;">` : esc(iniciales(ui.usuarioActual.nombre))}</div>
+    <div class="avatar-mini" style="${estiloAvatar(ui.usuarioActual)}">${ui.usuarioActual.avatar_url ? `<img src="${esc(ui.usuarioActual.avatar_url)}" style="width:100%;height:100%;object-fit:cover;">` : esc(iniciales(ui.usuarioActual.nombre))}</div>
     <div class="info">
       <span class="nombre">${esc(ui.usuarioActual.nombre)}</span>
       <span class="rol">${esc(ui.usuarioActual.rol)}</span>
