@@ -528,6 +528,19 @@ body.mostrando-app #contenedor-app{ display:contents; }
   .doc-chapter-title{ break-after:avoid; }
   .doc-sheet tr{ break-inside:avoid; }
   thead{ display:table-header-group; }
+  .presencia-remota{ outline:none !important; background:none !important; }
+}
+
+/* Presencia en vivo: quién más tiene el cursor puesto en este mismo campo ahora mismo (igual que
+   se ve en un Google Doc compartido) — un color suave y estable por persona, nada más. Se agrega
+   al final de la hoja de estilos a propósito, para ganarle en orden de aparición (misma
+   especificidad, un solo selector de clase) a cualquier campo de abajo, sin importar si es
+   .input, .table-input, o cualquier otro — no hace falta tocar ninguno de ellos. */
+.presencia-remota{
+  outline:2px solid var(--color-presencia-borde, transparent);
+  outline-offset:-1px;
+  background-color:var(--color-presencia-fondo, transparent);
+  transition:outline-color .25s ease, background-color .25s ease;
 }
 </style>
 <!-- Antes cargaba desde cdn.jsdelivr.net: en vivo, el navegador del usuario (Edge con "Tracking
@@ -1509,14 +1522,79 @@ function manejarCambioRealtime(payload) {
   pintarCambioRealtime(tabla, evento, fila);
 }
 
+/* ---------- Realtime: presencia (quién más tiene el cursor en el mismo campo que tú) ----------
+   Usa Presence, la otra mitad de Supabase Realtime aparte de postgres_changes (arriba) — cada
+   navegador transmite en qué campo tiene el cursor ahora mismo, y automáticamente recibe lo mismo
+   de todos los demás conectados, incluida la limpieza sola cuando alguien cierra su pestaña. Nada
+   de esto toca `state` ni se guarda en ningún lado — es pura señal efímera de "quién está aquí
+   ahora", se pierde apenas alguien se desconecta. */
+
+// Un color estable por persona (mismo id → mismo color siempre), sin necesitar coordinarlos entre
+// sí ni guardar una lista de colores usados — un hash simple del id alcanza.
+function colorParaUsuario(userId) {
+  let hash = 0;
+  const texto = String(userId);
+  for (let i = 0; i < texto.length; i++) hash = (hash * 31 + texto.charCodeAt(i)) | 0;
+  const hue = Math.abs(hash) % 360;
+  return { borde: `hsl(${hue} 55% 50%)`, fondo: `hsl(${hue} 70% 94%)` };
+}
+
+// La misma tripleta entidad+id+campo que ya identifica un campo editable para aplicarCampo() — se
+// reutiliza tal cual como la "dirección" que se transmite/recibe por presencia.
+function campoIdentidad(el) {
+  const entidad = el.dataset.entidad, id = el.dataset.id, campo = el.dataset.campo;
+  return (entidad && campo) ? `${entidad}|${id}|${campo}` : null;
+}
+
+let _presenciaRemota = []; // [{ userId, nombre, campo }] — nunca incluye la propia presencia
+function transmitirPresencia(campo) {
+  if (!_canalRealtime || !ui.usuarioActual) return;
+  _canalRealtime.track({ userId: ui.usuarioActual.id, nombre: ui.usuarioActual.nombre, campo: campo || null });
+}
+
+// Vuelve a calcular desde cero, cada vez, qué campos deben verse marcados — más simple y más
+// confiable que llevar la cuenta incremental de qué se agregó/quitó la vez anterior, y bastante
+// barato dado lo poco frecuente que es esto (nunca por cada tecla, solo al cambiar de campo).
+function aplicarPresenciaVisible() {
+  document.querySelectorAll('.presencia-remota').forEach(el => {
+    el.classList.remove('presencia-remota');
+    el.style.removeProperty('--color-presencia-borde');
+    el.style.removeProperty('--color-presencia-fondo');
+    el.removeAttribute('title');
+  });
+  _presenciaRemota.forEach(p => {
+    if (!p.campo) return;
+    const [entidad, id, campo] = p.campo.split('|');
+    const el = document.querySelector(`[data-entidad="${entidad}"][data-id="${id}"][data-campo="${campo}"]`);
+    if (!el) return; // esa pantalla no está abierta ahora mismo en este navegador — nada que marcar
+    const color = colorParaUsuario(p.userId);
+    el.classList.add('presencia-remota');
+    el.style.setProperty('--color-presencia-borde', color.borde);
+    el.style.setProperty('--color-presencia-fondo', color.fondo);
+    el.title = `${p.nombre} está aquí`;
+  });
+}
+
 let _canalRealtime = null;
+let _intervaloPresencia = null;
 function iniciarRealtime() {
   if (_canalRealtime) return; // ya conectado — no duplicar la suscripción (p.ej. si esto se llamara dos veces)
   _canalRealtime = sb.channel('cambios-en-vivo');
   Object.keys(REALTIME_TABLAS).forEach(tabla => {
     _canalRealtime.on('postgres_changes', { event: '*', schema: 'public', table: tabla }, manejarCambioRealtime);
   });
-  _canalRealtime.subscribe();
+  _canalRealtime.on('presence', { event: 'sync' }, () => {
+    const estado = _canalRealtime.presenceState();
+    _presenciaRemota = Object.values(estado).flat()
+      .filter(p => p.userId && (!ui.usuarioActual || p.userId !== ui.usuarioActual.id))
+      .map(p => ({ userId: p.userId, nombre: p.nombre, campo: p.campo }));
+    aplicarPresenciaVisible();
+  });
+  _canalRealtime.subscribe(estado => { if (estado === 'SUBSCRIBED') transmitirPresencia(null); });
+  // Autocorrección cada 2s: si algo se volvió a pintar de por medio (una fusión de datos, un
+  // guardado propio) y se perdió una marca de presencia, esto la vuelve a poner sin esperar a que
+  // alguien más cambie de campo para que llegue un nuevo evento de sincronización.
+  _intervaloPresencia = setInterval(aplicarPresenciaVisible, 2000);
 }
 
 /* ============================================================
@@ -2593,7 +2671,7 @@ function renderFilaAnticipoPersonal(a) {
   return `
     <tr data-id="${a.id}">
       <td><input class="table-input" style="min-width:170px" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="descripcion" value="${esc(a.descripcion)}" placeholder="Ej. Anticipo 1"></td>
-      <td><input class="table-input w-num" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="valor" data-numerico value="${a.valor}"></td>
+      <td><input class="table-input w-num" style="text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="valor" data-numerico data-formato-cop value="${formatNum(a.valor)}"></td>
       <td><input type="date" class="table-input" style="width:135px" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="fecha" value="${esc(a.fecha)}"></td>
       <td><button class="btn btn-icon btn-danger" data-action="eliminar-anticipo-personal" data-id="${a.id}" title="Eliminar">🗑</button></td>
     </tr>`;
@@ -2608,7 +2686,7 @@ function renderFilaAnticipoSupervisor(a) {
   return `
     <tr data-id="${a.id}">
       <td><input class="table-input" style="min-width:170px" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="descripcion" value="${esc(a.descripcion)}" placeholder="Ej. Anticipo 1"></td>
-      <td><input class="table-input w-num" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="valor" data-numerico value="${a.valor}"></td>
+      <td><input class="table-input w-num" style="text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="valor" data-numerico data-formato-cop value="${formatNum(a.valor)}"></td>
       <td><input type="date" class="table-input" style="width:135px" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="fecha" value="${esc(a.fecha)}"></td>
       <td><button class="btn btn-icon btn-danger" data-action="eliminar-anticipo-supervisor" data-id="${a.id}" title="Eliminar">🗑</button></td>
     </tr>`;
@@ -4338,6 +4416,7 @@ document.body.addEventListener('focusout', e => {
   // ("33.500"), mientras que mientras se edita se ve el número crudo (ver el focusin de abajo).
   if (el.dataset.formatoCop !== undefined) el.value = formatNum(leerCampoCOP(el));
   if (el === _comboboxInputActivo) cerrarCombobox();
+  if (campoIdentidad(el)) transmitirPresencia(null);
 });
 
 // Combobox de catálogo: se abre al enfocar el campo, se cierra al salir. Un click dentro del panel
@@ -4346,6 +4425,8 @@ document.body.addEventListener('focusout', e => {
 document.body.addEventListener('focusin', e => {
   if (e.target.dataset.catalogoTarget) abrirCombobox(e.target);
   if (e.target.dataset.formatoCop !== undefined) e.target.value = leerCampoCOP(e.target);
+  const identidad = campoIdentidad(e.target);
+  if (identidad) transmitirPresencia(identidad);
 });
 // Si el campo ya tenía el foco (p.ej. el panel se cerró y el usuario le vuelve a hacer clic sin que
 // el foco realmente cambie, caso en el que 'focusin' no se dispara de nuevo), esto lo vuelve a abrir.
