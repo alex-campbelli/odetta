@@ -1235,44 +1235,53 @@ let _guardarPendiente = false;
 // cambió, tabla por tabla, en orden padres-antes-que-hijos (un capítulo debe existir antes de
 // que un ítem pueda referenciarlo). Un mutex simple evita que dos guardados se crucen si uno
 // todavía sigue en camino por la red cuando el siguiente debounce dispara.
+//
+// TODO lo que se manda sale de UNA sola foto (`enviado`), tomada antes del primer envío, y es esa
+// misma foto la que al final queda marcada como sincronizada. Antes cada tabla leía `state` en
+// vivo, con llamadas de red de por medio, y al terminar se marcaba como sincronizado el `state` del
+// final: cualquier tecla escrita durante esos segundos de vuelo quedaba dada por guardada sin
+// haberse enviado nunca, y el siguiente guardado ya no veía diferencia alguna que mandar. Eso era
+// pérdida silenciosa de datos, sin ningún error a la vista. Con la foto única, lo que cambie durante
+// el vuelo simplemente queda pendiente y el próximo guardado sí lo detecta (_guardarPendiente).
 async function guardar() {
   if (!state) return; // beforeunload/visibilitychange puede disparar esto antes de iniciar sesión
   if (_guardando) { _guardarPendiente = true; return; }
   _guardando = true;
   marcarGuardando();
   const anterior = _ultimoEstadoSincronizado || estadoInicial();
+  const enviado = clonarProfundo(state);
   try {
     // Todo el guardado real va envuelto en un tiempo límite: si Supabase no responde en 30s (proyecto
     // del plan gratis despertando, conexión caída a mitad de camino), esto se rechaza como cualquier
     // otro error de red en vez de dejar "Guardando…" pegado para siempre — ver conTiempoLimite().
     await conTiempoLimite((async () => {
-      await aplicarDiff('clientes', calcularDiff(state.clientes.map(objetoAFilaCliente), anterior.clientes.map(objetoAFilaCliente)));
-      await aplicarDiff('registros_personal', calcularDiff(aplanarRegistros(state.clientes).map(objetoAFilaRegistroPersonal), aplanarRegistros(anterior.clientes).map(objetoAFilaRegistroPersonal)));
-      await aplicarDiff('conceptos_personal', calcularDiff(aplanarConceptos(state.clientes).map(objetoAFilaConceptoPersonal), aplanarConceptos(anterior.clientes).map(objetoAFilaConceptoPersonal)));
-      await aplicarDiff('anticipos_personal', calcularDiff(aplanarAnticipos(state.clientes).map(objetoAFilaAnticipoPersonal), aplanarAnticipos(anterior.clientes).map(objetoAFilaAnticipoPersonal)));
-      await aplicarDiff('presupuestos', calcularDiff(state.presupuestos.map(objetoAFilaPresupuesto), anterior.presupuestos.map(objetoAFilaPresupuesto)));
-      await aplicarDiff('capitulos', calcularDiff(aplanarCapitulos(state.presupuestos).map(objetoAFilaCapitulo), aplanarCapitulos(anterior.presupuestos).map(objetoAFilaCapitulo)));
-      await aplicarDiff('items', calcularDiff(aplanarItems(state.presupuestos).map(objetoAFilaItem), aplanarItems(anterior.presupuestos).map(objetoAFilaItem)));
-      await aplicarDiff('recursos_apu', calcularDiff(aplanarRecursos(state.presupuestos).map(objetoAFilaRecurso), aplanarRecursos(anterior.presupuestos).map(objetoAFilaRecurso)));
-      await aplicarDiff('catalogo_materiales', calcularDiff(state.catalogo.map(objetoAFilaCatalogoMaterial), anterior.catalogo.map(objetoAFilaCatalogoMaterial)));
-      await aplicarDiff('catalogo_servicios', calcularDiff(state.catalogoServicios.map(objetoAFilaCatalogoServicio), anterior.catalogoServicios.map(objetoAFilaCatalogoServicio)));
-      await aplicarDiff('catalogo_mano_obra', calcularDiff(state.catalogoManoObra.map(objetoAFilaCatalogoManoObra), anterior.catalogoManoObra.map(objetoAFilaCatalogoManoObra)));
+      await aplicarDiff('clientes', calcularDiff(enviado.clientes.map(objetoAFilaCliente), anterior.clientes.map(objetoAFilaCliente)));
+      await aplicarDiff('registros_personal', calcularDiff(aplanarRegistros(enviado.clientes).map(objetoAFilaRegistroPersonal), aplanarRegistros(anterior.clientes).map(objetoAFilaRegistroPersonal)));
+      await aplicarDiff('conceptos_personal', calcularDiff(aplanarConceptos(enviado.clientes).map(objetoAFilaConceptoPersonal), aplanarConceptos(anterior.clientes).map(objetoAFilaConceptoPersonal)));
+      await aplicarDiff('anticipos_personal', calcularDiff(aplanarAnticipos(enviado.clientes).map(objetoAFilaAnticipoPersonal), aplanarAnticipos(anterior.clientes).map(objetoAFilaAnticipoPersonal)));
+      await aplicarDiff('presupuestos', calcularDiff(enviado.presupuestos.map(objetoAFilaPresupuesto), anterior.presupuestos.map(objetoAFilaPresupuesto)));
+      await aplicarDiff('capitulos', calcularDiff(aplanarCapitulos(enviado.presupuestos).map(objetoAFilaCapitulo), aplanarCapitulos(anterior.presupuestos).map(objetoAFilaCapitulo)));
+      await aplicarDiff('items', calcularDiff(aplanarItems(enviado.presupuestos).map(objetoAFilaItem), aplanarItems(anterior.presupuestos).map(objetoAFilaItem)));
+      await aplicarDiff('recursos_apu', calcularDiff(aplanarRecursos(enviado.presupuestos).map(objetoAFilaRecurso), aplanarRecursos(anterior.presupuestos).map(objetoAFilaRecurso)));
+      await aplicarDiff('catalogo_materiales', calcularDiff(enviado.catalogo.map(objetoAFilaCatalogoMaterial), anterior.catalogo.map(objetoAFilaCatalogoMaterial)));
+      await aplicarDiff('catalogo_servicios', calcularDiff(enviado.catalogoServicios.map(objetoAFilaCatalogoServicio), anterior.catalogoServicios.map(objetoAFilaCatalogoServicio)));
+      await aplicarDiff('catalogo_mano_obra', calcularDiff(enviado.catalogoManoObra.map(objetoAFilaCatalogoManoObra), anterior.catalogoManoObra.map(objetoAFilaCatalogoManoObra)));
 
-      if (JSON.stringify(state.empresa) !== JSON.stringify(anterior.empresa)) {
+      if (JSON.stringify(enviado.empresa) !== JSON.stringify(anterior.empresa)) {
         anotarEscrituraPropia([1]); // empresa_config es siempre la fila id=1
         const { error } = await sb.from('empresa_config').update({
-          consecutivo_presupuesto: state.empresa.consecutivoPresupuesto,
-          aiu_administracion_defecto: numero(state.empresa.aiuDefecto.administracion),
-          aiu_imprevistos_defecto: numero(state.empresa.aiuDefecto.imprevistos),
-          aiu_utilidad_defecto: numero(state.empresa.aiuDefecto.utilidad),
-          iva_sobre_utilidad_defecto: numero(state.empresa.ivaSobreUtilidadDefecto),
-          factor_margen_defecto: numero(state.empresa.factorMargenDefecto)
+          consecutivo_presupuesto: enviado.empresa.consecutivoPresupuesto,
+          aiu_administracion_defecto: numero(enviado.empresa.aiuDefecto.administracion),
+          aiu_imprevistos_defecto: numero(enviado.empresa.aiuDefecto.imprevistos),
+          aiu_utilidad_defecto: numero(enviado.empresa.aiuDefecto.utilidad),
+          iva_sobre_utilidad_defecto: numero(enviado.empresa.ivaSobreUtilidadDefecto),
+          factor_margen_defecto: numero(enviado.empresa.factorMargenDefecto)
         }).eq('id', 1);
         if (error) throw new Error('Guardando configuración de empresa: ' + error.message);
       }
     })(), 30000);
 
-    _ultimoEstadoSincronizado = clonarProfundo(state);
+    _ultimoEstadoSincronizado = enviado;
     marcarGuardado();
   } catch (e) {
     const t = document.getElementById('save-indicator-text');
@@ -1303,7 +1312,13 @@ function marcarGuardando() {
 }
 
 window.addEventListener('beforeunload', guardar);
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') guardar(); });
+// Al irse de la pestaña se guarda lo pendiente; al volver se resincroniza, porque el navegador pudo
+// haber congelado la pestaña (o cerrado su conexión) y en ese rato los cambios de los demás se
+// perdieron sin aviso — es el momento exacto en que uno vuelve a mirar la pantalla y espera verla al día.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') guardar();
+  else resincronizar('volver a la pestaña');
+});
 
 /* ---------- Realtime: sincronización en vivo ----------
    Todo lo de acá abajo SOLO toca `state` (y su reflejo en _ultimoEstadoSincronizado) — nunca pinta
@@ -1636,8 +1651,49 @@ function aplicarPresenciaVisible() {
   });
 }
 
+/* ---------- Resincronización: la red de seguridad de todo lo anterior ----------
+   Realtime NO reenvía lo que pasó mientras la conexión estuvo caída, y la conexión se cae más
+   seguido de lo que parece: cambio de red, suspender el computador, y sobre todo el navegador
+   congelando una pestaña en segundo plano (justo el caso de tener admin en una pestaña y supervisor
+   en otra). Todo lo que ocurrió durante esa caída se pierde para esa pestaña, sin ningún aviso.
+   Y no queda solo en "no veo lo nuevo": como guardar() manda la fila COMPLETA, la primera edición
+   que haga esa pestaña desactualizada reescribe con valores viejos lo que otros ya habían cambiado
+   —incluso reviviendo algo que ya habían borrado—. Eso es lo que se siente como "el rol admin manda
+   sobre los demás": no es el rol, es quien tenga la pestaña vieja y siga editando (y el admin es
+   quien más edita). Por eso se vuelve a traer todo desde cero al recuperar la conexión, al volver a
+   la pestaña, y cada tanto como respaldo. */
+const RESINCRONIZAR_CADA_MS = 30000;
+let _resincronizando = false;
+let _intervaloResincronizar = null;
+async function resincronizar(motivo) {
+  if (!state || !ui.usuarioActual) return;    // todavía en el login: no hay nada que resincronizar
+  if (_resincronizando || _guardando) return; // no atravesarse a algo que ya está en vuelo
+  // Si alguien está escribiendo, se deja para la próxima oportunidad: cargar() reemplaza state
+  // entero, y repintar encima le borraría el campo a medio llenar.
+  if (algoEnfocadoDentroDe('contenedor-app')) return;
+  _resincronizando = true;
+  try {
+    await guardar(); // primero lo propio que estuviera pendiente, para no perderlo al recargar
+    const antes = JSON.stringify(_ultimoEstadoSincronizado);
+    // Con tiempo límite, igual que el cargar() del arranque: sin esto, una red colgada dejaría
+    // _resincronizando en true para siempre y esta pestaña no volvería a resincronizar nunca.
+    await conTiempoLimite(cargar(), 30000);
+    // Lo normal es que no haya cambiado nada (Realtime ya venía haciendo su trabajo): en ese caso
+    // no se repinta, para que la pantalla no se reconstruya sola cada tanto sin ninguna razón.
+    if (JSON.stringify(_ultimoEstadoSincronizado) === antes) return;
+    renderVistaActual();
+    if (modalPersonalEstaPintado()) renderModalPersonal();
+    aplicarPresenciaVisible(); // el repintado se lleva las marcas de presencia: volver a ponerlas
+  } catch (e) {
+    console.error('No se pudo resincronizar (' + motivo + '):', e);
+  } finally {
+    _resincronizando = false;
+  }
+}
+
 let _canalRealtime = null;
 let _intervaloPresencia = null;
+let _yaEstuvoSuscrito = false;
 function iniciarRealtime() {
   if (_canalRealtime) return; // ya conectado — no duplicar la suscripción (p.ej. si esto se llamara dos veces)
   _canalRealtime = sb.channel('cambios-en-vivo');
@@ -1651,11 +1707,23 @@ function iniciarRealtime() {
       .map(p => ({ userId: p.userId, nombre: p.nombre, campo: p.campo }));
     aplicarPresenciaVisible();
   });
-  _canalRealtime.subscribe(estado => { if (estado === 'SUBSCRIBED') transmitirPresencia(null); });
+  _canalRealtime.subscribe(estado => {
+    if (estado !== 'SUBSCRIBED') return;
+    transmitirPresencia(null);
+    // La PRIMERA suscripción no necesita resincronizar (continuarConSesion() acaba de cargar todo).
+    // Cualquier siguiente sí: significa que la conexión se cayó y volvió, y nada de lo que pasó
+    // mientras estuvo caída se reenvía.
+    if (_yaEstuvoSuscrito) resincronizar('reconexión de Realtime');
+    _yaEstuvoSuscrito = true;
+  });
   // Autocorrección cada 2s: si algo se volvió a pintar de por medio (una fusión de datos, un
   // guardado propio) y se perdió una marca de presencia, esto la vuelve a poner sin esperar a que
   // alguien más cambie de campo para que llegue un nuevo evento de sincronización.
   _intervaloPresencia = setInterval(aplicarPresenciaVisible, 2000);
+  // Respaldo por si un evento se perdió sin que la conexión se cayera del todo (o se cayó y volvió
+  // sin que el canal lo reportara): cada tanto se comparan los datos contra la base de verdad. No
+  // reemplaza a Realtime —que sigue siendo lo instantáneo—, solo evita quedarse viejo sin saberlo.
+  _intervaloResincronizar = setInterval(() => resincronizar('respaldo periódico'), RESINCRONIZAR_CADA_MS);
 }
 
 /* ============================================================
@@ -2319,6 +2387,13 @@ function mostrarVista(nombre, params) {
       catalogoSubVista: ui.catalogoSubVista
     }));
   } catch (e) { /* almacenamiento no disponible: no pasa nada, solo no se recuerda la vista */ }
+  renderVistaActual();
+}
+// Repinta la pantalla en la que ya se está, sin navegar: lo mismo que hace el final de
+// mostrarVista(), pero sin volver a subir el scroll ni reescribir la última vista recordada — para
+// poder reusarlo después de recargar los datos en una resincronización.
+function renderVistaActual() {
+  const nombre = ui.vista;
   if (nombre === 'editor-presupuesto') renderEditor();
   else if (nombre === 'catalogo') renderCatalogo();
   else if (nombre === 'vista-cliente') renderVistaCliente();
