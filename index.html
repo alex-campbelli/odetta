@@ -4054,6 +4054,7 @@ function renderEditorCliente() {
               <td>
                 <div class="row-actions">
                   <button class="btn btn-sm" data-action="abrir-presupuesto" data-id="${p.id}">Abrir</button>
+                  <button class="btn btn-sm" data-action="ver-cliente" data-id="${p.id}" title="Ver e imprimir este presupuesto">🖨</button>
                   <button class="btn btn-sm btn-ghost" data-action="duplicar-presupuesto" data-id="${p.id}" title="Duplicar">⧉</button>
                   ${ui.usuarioActual && ui.usuarioActual.rol === 'operario' ? '' : `<button class="btn btn-sm btn-danger" data-action="eliminar-presupuesto" data-id="${p.id}" title="Eliminar">🗑</button>`}
                 </div>
