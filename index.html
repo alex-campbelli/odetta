@@ -1254,6 +1254,271 @@ function marcarGuardando() {
 window.addEventListener('beforeunload', guardar);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') guardar(); });
 
+/* ---------- Realtime: sincronización en vivo ----------
+   Todo lo de acá abajo SOLO toca `state` (y su reflejo en _ultimoEstadoSincronizado) — nunca pinta
+   nada en pantalla directamente. Qué hacer con el DOM después de fusionar un cambio se decide
+   aparte, en pintarCambioRealtime() — separar las dos cosas es lo que permite que fusionar sea
+   siempre seguro (es solo memoria) aunque pintar no siempre lo sea (podría interrumpir a alguien
+   escribiendo). Ver agregar-realtime.sql: las 6 tablas anidadas (capitulos/items/recursos_apu/
+   registros_personal/conceptos_personal/anticipos_personal) corren con REPLICA IDENTITY FULL para
+   que un evento DELETE siempre traiga la fila completa (incluida la clave foránea al padre) — sin
+   eso, Postgres por defecto solo garantiza el id en un DELETE, y no alcanzaría para saber dónde
+   quitar la fila dentro del árbol. */
+
+// Inserta, actualiza (conservando la misma referencia de objeto) o quita "obj" (ya mapeado, con su
+// .id) dentro de "lista" — el primitivo que usan todas las funciones de fusión de abajo.
+function fusionarEnLista(lista, evento, obj) {
+  const idx = lista.findIndex(x => x.id === obj.id);
+  if (evento === 'DELETE') {
+    if (idx >= 0) lista.splice(idx, 1);
+    return null;
+  }
+  if (idx >= 0) { Object.assign(lista[idx], obj); return lista[idx]; }
+  lista.push(obj);
+  return obj;
+}
+
+function fusionarCliente(evento, fila) {
+  const aplicarA = raizClientes => {
+    const manoDeObraPrevia = raizClientes.find(c => c.id === fila.id)?.manoDeObra;
+    const c = fusionarEnLista(raizClientes, evento, filaAObjetoCliente(fila));
+    if (c && manoDeObraPrevia) c.manoDeObra = manoDeObraPrevia;
+  };
+  aplicarA(state.clientes);
+  aplicarA(_ultimoEstadoSincronizado.clientes);
+}
+
+function fusionarPresupuesto(evento, fila) {
+  const aplicarA = raizPresupuestos => {
+    const capitulosPrevios = raizPresupuestos.find(p => p.id === fila.id)?.capitulos;
+    const p = fusionarEnLista(raizPresupuestos, evento, filaAObjetoPresupuesto(fila));
+    if (p && capitulosPrevios) p.capitulos = capitulosPrevios;
+    return p;
+  };
+  const p1 = aplicarA(state.presupuestos);
+  aplicarA(_ultimoEstadoSincronizado.presupuestos);
+  if (p1) calcularPresupuesto(p1);
+}
+
+function fusionarCapitulo(evento, fila) {
+  const aplicarA = raizPresupuestos => {
+    const p = raizPresupuestos.find(x => x.id === fila.presupuesto_id);
+    if (!p) return null;
+    const itemsPrevios = p.capitulos.find(c => c.id === fila.id)?.items;
+    const cap = fusionarEnLista(p.capitulos, evento, filaAObjetoCapitulo(fila));
+    if (cap && itemsPrevios) cap.items = itemsPrevios;
+    return p;
+  };
+  const p1 = aplicarA(state.presupuestos);
+  aplicarA(_ultimoEstadoSincronizado.presupuestos);
+  if (p1) calcularPresupuesto(p1);
+}
+
+function fusionarItem(evento, fila) {
+  const aplicarA = raizPresupuestos => {
+    for (const p of raizPresupuestos) {
+      const cap = p.capitulos.find(c => c.id === fila.capitulo_id);
+      if (!cap) continue;
+      const recursosPrevios = cap.items.find(i => i.id === fila.id)?.apu?.recursos;
+      const item = fusionarEnLista(cap.items, evento, filaAObjetoItem(fila));
+      if (item && recursosPrevios) item.apu.recursos = recursosPrevios;
+      return p;
+    }
+    return null;
+  };
+  const p1 = aplicarA(state.presupuestos);
+  aplicarA(_ultimoEstadoSincronizado.presupuestos);
+  if (p1) calcularPresupuesto(p1);
+}
+
+function fusionarRecurso(evento, fila) {
+  const aplicarA = raizPresupuestos => {
+    for (const p of raizPresupuestos) {
+      for (const cap of p.capitulos) {
+        const item = cap.items.find(i => i.id === fila.item_id);
+        if (!item) continue;
+        fusionarEnLista(item.apu.recursos, evento, filaAObjetoRecurso(fila));
+        return p;
+      }
+    }
+    return null;
+  };
+  const p1 = aplicarA(state.presupuestos);
+  aplicarA(_ultimoEstadoSincronizado.presupuestos);
+  if (p1) calcularPresupuesto(p1);
+}
+
+function fusionarRegistro(evento, fila) {
+  const aplicarA = raizClientes => {
+    const c = raizClientes.find(x => x.id === fila.cliente_id);
+    if (!c) return null;
+    const conceptosPrevios = c.manoDeObra.find(r => r.id === fila.id)?.conceptos;
+    const anticiposPrevios = c.manoDeObra.find(r => r.id === fila.id)?.anticipos;
+    const reg = fusionarEnLista(c.manoDeObra, evento, filaAObjetoRegistroPersonal(fila));
+    if (reg && conceptosPrevios) reg.conceptos = conceptosPrevios;
+    if (reg && anticiposPrevios) reg.anticipos = anticiposPrevios;
+    return c;
+  };
+  const c1 = aplicarA(state.clientes);
+  aplicarA(_ultimoEstadoSincronizado.clientes);
+  if (c1) { const r = c1.manoDeObra.find(x => x.id === fila.id); if (r) calcularRegistroPersonal(r); }
+}
+
+function fusionarConceptoPersonal(evento, fila) {
+  const aplicarA = raizClientes => {
+    for (const c of raizClientes) {
+      const r = c.manoDeObra.find(x => x.id === fila.registro_id);
+      if (!r) continue;
+      fusionarEnLista(r.conceptos, evento, filaAObjetoConceptoPersonal(fila));
+      return r;
+    }
+    return null;
+  };
+  const r1 = aplicarA(state.clientes);
+  aplicarA(_ultimoEstadoSincronizado.clientes);
+  if (r1) calcularRegistroPersonal(r1);
+}
+
+function fusionarAnticipoPersonal(evento, fila) {
+  const aplicarA = raizClientes => {
+    for (const c of raizClientes) {
+      const r = c.manoDeObra.find(x => x.id === fila.registro_id);
+      if (!r) continue;
+      fusionarEnLista(r.anticipos, evento, filaAObjetoAnticipoPersonal(fila));
+      return r;
+    }
+    return null;
+  };
+  const r1 = aplicarA(state.clientes);
+  aplicarA(_ultimoEstadoSincronizado.clientes);
+  if (r1) calcularRegistroPersonal(r1);
+}
+
+function fusionarCatalogoMaterial(evento, fila) {
+  fusionarEnLista(state.catalogo, evento, filaAObjetoCatalogoMaterial(fila));
+  fusionarEnLista(_ultimoEstadoSincronizado.catalogo, evento, filaAObjetoCatalogoMaterial(fila));
+}
+function fusionarCatalogoServicio(evento, fila) {
+  fusionarEnLista(state.catalogoServicios, evento, filaAObjetoCatalogoServicio(fila));
+  fusionarEnLista(_ultimoEstadoSincronizado.catalogoServicios, evento, filaAObjetoCatalogoServicio(fila));
+}
+function fusionarCatalogoManoObra(evento, fila) {
+  fusionarEnLista(state.catalogoManoObra, evento, filaAObjetoCatalogoManoObra(fila));
+  fusionarEnLista(_ultimoEstadoSincronizado.catalogoManoObra, evento, filaAObjetoCatalogoManoObra(fila));
+}
+// empresa_config es una fila única (id=1) que nunca se borra — no hay caso DELETE real que manejar.
+function fusionarEmpresa(evento, fila) {
+  if (evento === 'DELETE') return;
+  state.empresa = filaAObjetoEmpresa(fila);
+  _ultimoEstadoSincronizado.empresa = filaAObjetoEmpresa(fila);
+}
+
+const REALTIME_TABLAS = {
+  clientes: fusionarCliente,
+  presupuestos: fusionarPresupuesto,
+  capitulos: fusionarCapitulo,
+  items: fusionarItem,
+  recursos_apu: fusionarRecurso,
+  registros_personal: fusionarRegistro,
+  conceptos_personal: fusionarConceptoPersonal,
+  anticipos_personal: fusionarAnticipoPersonal,
+  catalogo_materiales: fusionarCatalogoMaterial,
+  catalogo_servicios: fusionarCatalogoServicio,
+  catalogo_mano_obra: fusionarCatalogoManoObra,
+  empresa_config: fusionarEmpresa
+};
+
+// ¿Hay algo con el foco (el cursor de quien esté escribiendo) dentro de este contenedor ahora
+// mismo? Node.contains() ya resuelve bien los casos límite (nada enfocado = document.body o null,
+// que nunca "está dentro" de nada) — no hace falta un chequeo aparte para esos casos.
+function algoEnfocadoDentroDe(contenedorId) {
+  const cont = document.getElementById(contenedorId);
+  return !!(cont && cont.contains(document.activeElement));
+}
+
+// Reemplaza (o quita, si htmlNuevo es null) una sola fila de una tabla — deja cualquier otra fila,
+// y el cursor de quien esté editando ahí, completamente intactos. Si el usuario tiene el cursor
+// justo DENTRO de esa fila, no se toca nada (se aplica en el próximo cambio, o al volver a esa
+// pantalla) — es la regla que evita interrumpir a alguien a mitad de una edición.
+function reemplazarFilaSiNoEnfocada(selectorFila, htmlNuevo) {
+  const fila = document.querySelector(selectorFila);
+  if (!fila) return false;
+  if (fila.contains(document.activeElement)) return false;
+  if (htmlNuevo === null) fila.remove();
+  else fila.outerHTML = htmlNuevo;
+  return true;
+}
+
+const VISTAS_REALTIME_SOLO_LECTURA = {
+  'vista-cliente': { tablas: ['presupuestos', 'capitulos', 'items', 'recursos_apu'], render: () => renderVistaCliente() },
+  'vista-costos-personal': { tablas: ['registros_personal', 'conceptos_personal', 'anticipos_personal'], render: () => renderVistaCostosPersonal() },
+  'listado-clientes': { tablas: ['clientes', 'presupuestos', 'registros_personal'], render: () => renderListadoClientes() },
+  'dashboard': { tablas: ['presupuestos', 'clientes', 'registros_personal'], render: () => renderVistaDashboard() }
+};
+const CONFIG_CATALOGO_REALTIME = {
+  catalogo_materiales: { subvista: 'materiales', mapear: filaAObjetoCatalogoMaterial, renderFila: renderFilaCatalogoMaterial },
+  catalogo_servicios: { subvista: 'servicios', mapear: filaAObjetoCatalogoServicio, renderFila: renderFilaCatalogoServicio },
+  catalogo_mano_obra: { subvista: 'manoObra', mapear: filaAObjetoCatalogoManoObra, renderFila: renderFilaCatalogoManoObra }
+};
+
+// Decide qué hacer en pantalla DESPUÉS de fusionar un cambio en state (que ya pasó, siempre, sin
+// importar qué devuelva esto). Las pantallas 100% de solo lectura se repintan enteras sin riesgo.
+// Las pantallas con campos editables solo se repintan si nadie tiene el cursor puesto ahí en ese
+// momento — si lo tiene, se deja tal cual por ahora (el dato ya quedó bien fusionado en memoria, se
+// ve correcto la próxima vez que se entre o se navegue a otra pantalla y se vuelva).
+function pintarCambioRealtime(tabla, evento, fila) {
+  const lectura = VISTAS_REALTIME_SOLO_LECTURA[ui.vista];
+  if (lectura && lectura.tablas.includes(tabla)) { lectura.render(); return; }
+
+  if (ui.vista === 'editor-presupuesto' && ['presupuestos', 'capitulos', 'items', 'recursos_apu'].includes(tabla)) {
+    if (presupuestoActivo()) { recalcularActivo(); refrescarNumerosEditor(); }
+    return;
+  }
+
+  if (ui.vista === 'catalogo') {
+    const cfg = CONFIG_CATALOGO_REALTIME[tabla];
+    if (cfg && ui.catalogoSubVista === cfg.subvista) {
+      reemplazarFilaSiNoEnfocada(`#catalogo-contenido tr[data-id="${fila.id}"]`, evento === 'DELETE' ? null : cfg.renderFila(cfg.mapear(fila)));
+    }
+    return;
+  }
+
+  if (ui.vista === 'editor-cliente' && ['clientes', 'presupuestos', 'registros_personal'].includes(tabla)) {
+    if (!algoEnfocadoDentroDe('editor-cliente-contenido')) renderEditorCliente();
+    return;
+  }
+
+  if (ui.vista === 'panel-supervisor' && ['clientes', 'presupuestos', 'registros_personal', 'conceptos_personal', 'anticipos_personal'].includes(tabla)) {
+    if (!algoEnfocadoDentroDe('panel-supervisor-contenido')) renderPanelSupervisor();
+    return;
+  }
+
+  if (ui.vista === 'admin' && ui.adminSubVista === 'config' && tabla === 'empresa_config') {
+    if (!algoEnfocadoDentroDe('admin-contenido')) renderVistaAdmin();
+  }
+}
+
+function manejarCambioRealtime(payload) {
+  const tabla = payload.table;
+  const evento = payload.eventType; // 'INSERT' | 'UPDATE' | 'DELETE'
+  const fila = evento === 'DELETE' ? payload.old : payload.new;
+  if (!fila || !fila.id) return; // DELETE sin REPLICA IDENTITY FULL en la tabla: no hay ni id, no se puede ubicar nada
+  const fusionar = REALTIME_TABLAS[tabla];
+  if (!fusionar) return;
+  fusionar(evento, fila);
+  pintarCambioRealtime(tabla, evento, fila);
+}
+
+let _canalRealtime = null;
+function iniciarRealtime() {
+  if (_canalRealtime) return; // ya conectado — no duplicar la suscripción (p.ej. si esto se llamara dos veces)
+  _canalRealtime = sb.channel('cambios-en-vivo');
+  Object.keys(REALTIME_TABLAS).forEach(tabla => {
+    _canalRealtime.on('postgres_changes', { event: '*', schema: 'public', table: tabla }, manejarCambioRealtime);
+  });
+  _canalRealtime.subscribe();
+}
+
 /* ============================================================
    5. MOTOR DE CÁLCULO
    ============================================================ */
@@ -2345,10 +2610,18 @@ function renderFilaAnticipoSupervisor(a) {
       <td><input class="table-input" style="min-width:170px" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="descripcion" value="${esc(a.descripcion)}" placeholder="Ej. Anticipo 1"></td>
       <td><input class="table-input w-num" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="valor" data-numerico value="${a.valor}"></td>
       <td><input type="date" class="table-input" style="width:135px" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="fecha" value="${esc(a.fecha)}"></td>
+      <td><button class="btn btn-icon btn-danger" data-action="eliminar-anticipo-supervisor" data-id="${a.id}" title="Eliminar">🗑</button></td>
     </tr>`;
 }
 function alternarRegistroSupervisor(registroId) {
   ui.modalPersonalId = ui.modalPersonalId === registroId ? null : registroId;
+  renderPanelSupervisor();
+}
+function eliminarAnticipoSupervisor(id) {
+  const r = registroPersonalActivo();
+  if (!r) return;
+  r.anticipos = r.anticipos.filter(a => a.id !== id);
+  recalcularRegistroPersonalActivo(); guardar();
   renderPanelSupervisor();
 }
 function agregarAnticipoSupervisor() {
@@ -2416,8 +2689,8 @@ function renderPanelSupervisor() {
         </table></div>
         <h4 class="modal-subhead" style="margin-top:18px;">Anticipos</h4>
         <div class="table-wrap"><table>
-          <thead><tr><th>Descripción</th><th class="num">Valor</th><th>Fecha</th></tr></thead>
-          <tbody>${registroAbierto.anticipos.map(renderFilaAnticipoSupervisor).join('') || `<tr><td colspan="3" style="color:var(--ink-faint);text-align:center;padding:14px;">Sin anticipos todavía.</td></tr>`}</tbody>
+          <thead><tr><th>Descripción</th><th class="num">Valor</th><th>Fecha</th><th></th></tr></thead>
+          <tbody>${registroAbierto.anticipos.map(renderFilaAnticipoSupervisor).join('') || `<tr><td colspan="4" style="color:var(--ink-faint);text-align:center;padding:14px;">Sin anticipos todavía.</td></tr>`}</tbody>
         </table></div>
         <div style="margin-top:10px;"><button class="btn btn-sm" data-action="agregar-anticipo-supervisor">+ Agregar anticipo</button></div>
         <div class="summary-panel" style="position:static;margin-top:16px;padding:14px 18px;">
@@ -2459,6 +2732,40 @@ function campoPorcentaje(entidad, id, campo, etiqueta, valorDecimal) {
 /* ============================================================
    15. RENDER — CATÁLOGO
    ============================================================ */
+// Filas de catálogo, cada una en su propia función (antes escritas en línea dentro de
+// renderCatalogo()) — así Realtime puede reconstruir UNA fila puntual con reemplazarFilaSiNoEnfocada()
+// sin duplicar la plantilla, igual que ya existe renderItemRow() para los ítems de un presupuesto.
+function renderFilaCatalogoServicio(c) {
+  return `
+        <tr data-id="${c.id}">
+          <td><input class="table-input" style="min-width:280px" data-entidad="catalogoServicio" data-id="${c.id}" data-campo="nombre" value="${esc(c.nombre)}"></td>
+          <td><button class="btn btn-icon btn-danger" data-action="eliminar-catalogo-servicio" data-id="${c.id}" title="Eliminar">🗑</button></td>
+        </tr>`;
+}
+function renderFilaCatalogoManoObra(c) {
+  return `
+        <tr data-id="${c.id}">
+          <td><input class="table-input" style="min-width:260px" data-entidad="catalogoManoObra" data-id="${c.id}" data-campo="nombre" value="${esc(c.nombre)}"></td>
+          <td><input class="table-input w-unidad" data-entidad="catalogoManoObra" data-id="${c.id}" data-campo="unidad" value="${esc(c.unidad)}"></td>
+          <td class="num"><input class="table-input" style="text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="catalogoManoObra" data-id="${c.id}" data-campo="precio" data-numerico data-formato-cop value="${formatNum(c.precio)}"></td>
+          <td><button class="btn btn-icon btn-danger" data-action="eliminar-catalogo-mano-obra" data-id="${c.id}" title="Eliminar">🗑</button></td>
+        </tr>`;
+}
+function renderFilaCatalogoMaterial(c) {
+  const dias = Math.floor((new Date() - new Date(c.fechaActualizacion)) / 86400000);
+  const viejo = dias > 180;
+  return `
+      <tr data-id="${c.id}">
+        <td><input class="table-input" style="min-width:200px" data-entidad="catalogo" data-id="${c.id}" data-campo="nombre" value="${esc(c.nombre)}"></td>
+        <td><input class="table-input" style="width:140px" data-entidad="catalogo" data-id="${c.id}" data-campo="categoria" value="${esc(c.categoria)}"></td>
+        <td><input class="table-input w-unidad" data-entidad="catalogo" data-id="${c.id}" data-campo="unidad" value="${esc(c.unidad)}"></td>
+        <td class="num"><input class="table-input" style="text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="catalogo" data-id="${c.id}" data-campo="precio" data-numerico data-formato-cop value="${formatNum(c.precio)}"></td>
+        <td><input class="table-input" style="width:130px" data-entidad="catalogo" data-id="${c.id}" data-campo="proveedor" value="${esc(c.proveedor)}"></td>
+        <td><select class="table-input" data-entidad="catalogo" data-id="${c.id}" data-campo="estado">${ESTADOS_CATALOGO.map(e => `<option ${e === c.estado ? 'selected' : ''}>${e}</option>`).join('')}</select></td>
+        <td class="mono" style="font-size:.78rem;${viejo ? 'color:var(--amber)' : 'color:var(--ink-faint)'}" title="${viejo ? 'Precio con más de 6 meses sin actualizar' : ''}">${formatFechaCorta(c.fechaActualizacion)}${viejo ? ' ⚠' : ''}</td>
+        <td><button class="btn btn-icon btn-danger" data-action="eliminar-catalogo" data-id="${c.id}" title="Eliminar">🗑</button></td>
+      </tr>`;
+}
 function renderCatalogo() {
   const cont = document.getElementById('catalogo-contenido');
   const filtro = ui.filtroCatalogo.trim().toLowerCase();
@@ -2474,11 +2781,7 @@ function renderCatalogo() {
     cont.innerHTML = toggle + (items.length === 0 ? `<div class="empty-state"><p>${state.catalogoServicios.length === 0 ? 'Todavía no hay servicios en el catálogo.' : `Ningún servicio coincide con "${esc(ui.filtroCatalogo)}".`}</p></div>` : `
       <div class="table-wrap"><table>
         <thead><tr><th>Nombre</th><th></th></tr></thead>
-        <tbody>${items.map(c => `
-        <tr data-id="${c.id}">
-          <td><input class="table-input" style="min-width:280px" data-entidad="catalogoServicio" data-id="${c.id}" data-campo="nombre" value="${esc(c.nombre)}"></td>
-          <td><button class="btn btn-icon btn-danger" data-action="eliminar-catalogo-servicio" data-id="${c.id}" title="Eliminar">🗑</button></td>
-        </tr>`).join('')}</tbody>
+        <tbody>${items.map(renderFilaCatalogoServicio).join('')}</tbody>
       </table></div>`);
     return;
   }
@@ -2488,13 +2791,7 @@ function renderCatalogo() {
     cont.innerHTML = toggle + (items.length === 0 ? `<div class="empty-state"><p>${state.catalogoManoObra.length === 0 ? 'Todavía no hay labores en el catálogo de mano de obra.' : `Ninguna labor coincide con "${esc(ui.filtroCatalogo)}".`}</p></div>` : `
       <div class="table-wrap"><table>
         <thead><tr><th>Nombre</th><th>Und</th><th class="num">Precio unitario</th><th></th></tr></thead>
-        <tbody>${items.map(c => `
-        <tr data-id="${c.id}">
-          <td><input class="table-input" style="min-width:260px" data-entidad="catalogoManoObra" data-id="${c.id}" data-campo="nombre" value="${esc(c.nombre)}"></td>
-          <td><input class="table-input w-unidad" data-entidad="catalogoManoObra" data-id="${c.id}" data-campo="unidad" value="${esc(c.unidad)}"></td>
-          <td class="num"><input class="table-input" style="text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="catalogoManoObra" data-id="${c.id}" data-campo="precio" data-numerico data-formato-cop value="${formatNum(c.precio)}"></td>
-          <td><button class="btn btn-icon btn-danger" data-action="eliminar-catalogo-mano-obra" data-id="${c.id}" title="Eliminar">🗑</button></td>
-        </tr>`).join('')}</tbody>
+        <tbody>${items.map(renderFilaCatalogoManoObra).join('')}</tbody>
       </table></div>`);
     return;
   }
@@ -2515,28 +2812,13 @@ function renderCatalogo() {
     (!filtro || c.nombre.toLowerCase().includes(filtro) || c.categoria.toLowerCase().includes(filtro)) &&
     (!filtroEstado || c.estado === filtroEstado)
   );
-  const hoy = new Date();
   if (items.length === 0) {
     cont.innerHTML = toggle + selectorEstado + `<div class="empty-state"><p>${state.catalogo.length === 0 ? 'El catálogo está vacío.' : `Ningún elemento coincide con estos filtros.`}</p></div>`;
     return;
   }
   cont.innerHTML = toggle + selectorEstado + `<div class="table-wrap"><table>
     <thead><tr><th>Nombre</th><th>Categoría</th><th>Und</th><th class="num">Precio habitual</th><th>Proveedor</th><th>Estado</th><th>Actualizado</th><th></th></tr></thead>
-    <tbody>${items.map(c => {
-      const dias = Math.floor((hoy - new Date(c.fechaActualizacion)) / 86400000);
-      const viejo = dias > 180;
-      return `
-      <tr data-id="${c.id}">
-        <td><input class="table-input" style="min-width:200px" data-entidad="catalogo" data-id="${c.id}" data-campo="nombre" value="${esc(c.nombre)}"></td>
-        <td><input class="table-input" style="width:140px" data-entidad="catalogo" data-id="${c.id}" data-campo="categoria" value="${esc(c.categoria)}"></td>
-        <td><input class="table-input w-unidad" data-entidad="catalogo" data-id="${c.id}" data-campo="unidad" value="${esc(c.unidad)}"></td>
-        <td class="num"><input class="table-input" style="text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="catalogo" data-id="${c.id}" data-campo="precio" data-numerico data-formato-cop value="${formatNum(c.precio)}"></td>
-        <td><input class="table-input" style="width:130px" data-entidad="catalogo" data-id="${c.id}" data-campo="proveedor" value="${esc(c.proveedor)}"></td>
-        <td><select class="table-input" data-entidad="catalogo" data-id="${c.id}" data-campo="estado">${ESTADOS_CATALOGO.map(e => `<option ${e === c.estado ? 'selected' : ''}>${e}</option>`).join('')}</select></td>
-        <td class="mono" style="font-size:.78rem;${viejo ? 'color:var(--amber)' : 'color:var(--ink-faint)'}" title="${viejo ? 'Precio con más de 6 meses sin actualizar' : ''}">${formatFechaCorta(c.fechaActualizacion)}${viejo ? ' ⚠' : ''}</td>
-        <td><button class="btn btn-icon btn-danger" data-action="eliminar-catalogo" data-id="${c.id}" title="Eliminar">🗑</button></td>
-      </tr>`;
-    }).join('')}</tbody>
+    <tbody>${items.map(renderFilaCatalogoMaterial).join('')}</tbody>
   </table></div>`;
 }
 
@@ -3153,8 +3435,7 @@ function renderModalEditarUsuario() {
         <div class="field"><label>Correo</label><input class="input" value="${esc(u.email)}" disabled title="El correo no se cambia desde aquí"></div>
         <div class="field"><label>Rol</label>
           <select class="select" id="editar-usuario-rol" ${esUnoMismo ? 'disabled title="No puedes cambiar tu propio rol desde aquí"' : ''}>
-            <option value="usuario" ${u.rol === 'usuario' ? 'selected' : ''}>Usuario</option>
-            <option value="operario" ${u.rol === 'operario' ? 'selected' : ''}>Operario</option>
+            <option value="operario" ${u.rol !== 'admin' && u.rol !== 'supervisor' ? 'selected' : ''}>Operario</option>
             <option value="supervisor" ${u.rol === 'supervisor' ? 'selected' : ''}>Supervisor</option>
             <option value="admin" ${u.rol === 'admin' ? 'selected' : ''}>Admin</option>
           </select>
@@ -3392,8 +3673,7 @@ function renderModalNuevoUsuario() {
         <div class="field"><label>Contraseña</label><input type="password" class="input" id="nuevo-usuario-clave" autocomplete="new-password" minlength="8" required></div>
         <div class="field"><label>Rol</label>
           <select class="select" id="nuevo-usuario-rol">
-            <option value="usuario" selected>Usuario</option>
-            <option value="operario">Operario</option>
+            <option value="operario" selected>Operario</option>
             <option value="supervisor">Supervisor</option>
             <option value="admin">Admin</option>
           </select>
@@ -3763,9 +4043,8 @@ function renderAdminInstrucciones() {
         No hay registro abierto: solo un Admin puede crear cuentas nuevas, desde el engranaje ⚙ → <b>Usuarios</b>. Una vez adentro, todos los usuarios ven la misma información — los roles no ocultan datos entre sí, solo controlan quién puede administrar usuarios y la configuración general.
       </p>
       <h2 style="font-size:1rem;margin-bottom:8px;">Roles actuales</h2>
-      <p style="color:var(--ink-soft);margin-bottom:6px;"><b>Usuario</b> — acceso normal: clientes, presupuestos, catálogo y costos de personal.</p>
-      <p style="color:var(--ink-soft);margin-bottom:6px;"><b>Operario</b> — igual que Usuario, salvo que no puede entrar a Configuraciones ni ver la Auditoría, y no puede eliminar un presupuesto completo (sí puede seguir agregando/eliminando capítulos, ítems y recursos dentro de uno).</p>
-      <p style="color:var(--ink-soft);margin-bottom:6px;"><b>Supervisor</b> — solo ve su propia pantalla de Mano de obra: puede ver (sin editar) el PDF final de los presupuestos de un cliente, y registrar anticipos/pagos de mano de obra. No ve catálogo, configuración ni el editor de presupuestos.</p>
+      <p style="color:var(--ink-soft);margin-bottom:6px;"><b>Operario</b> — acceso normal: clientes, presupuestos, catálogo y costos de personal. No entra a Configuraciones ni ve la Auditoría, y no puede eliminar un presupuesto completo (sí puede seguir agregando/eliminando capítulos, ítems y recursos dentro de uno).</p>
+      <p style="color:var(--ink-soft);margin-bottom:6px;"><b>Supervisor</b> — solo ve su propia pantalla de Mano de obra: puede ver (sin editar) el PDF final de los presupuestos de un cliente, y registrar, corregir o eliminar anticipos/pagos de mano de obra. No ve catálogo, configuración ni el editor de presupuestos.</p>
       <p style="color:var(--ink-soft);margin-bottom:20px;"><b>Admin</b> — todo lo anterior, más crear usuarios y cambiarles el rol, ver la auditoría de quién hizo qué, descargar copias de seguridad manuales, y editar la configuración general de la empresa (AIU, IVA y ganancia por defecto).</p>
       <h2 style="font-size:1rem;margin-bottom:8px;">¿Necesitas un rol nuevo o un permiso distinto?</h2>
       <p style="color:var(--ink-soft);">
@@ -3906,6 +4185,7 @@ document.body.addEventListener('click', e => {
     'eliminar-anticipo-personal': () => eliminarAnticipoPersonal(id),
     'panel-supervisor-abrir-registro': () => alternarRegistroSupervisor(id),
     'agregar-anticipo-supervisor': () => agregarAnticipoSupervisor(),
+    'eliminar-anticipo-supervisor': () => eliminarAnticipoSupervisor(id),
     'elegir-combobox': () => elegirOpcionCombobox(btn.dataset.nombre),
     'agregar-catalogo-combobox': () => crearCatalogoDesdeCombobox(btn.dataset.nombre),
     'cerrar-sesion': () => cerrarSesion(),
@@ -4179,6 +4459,9 @@ async function continuarConSesion(session, esLoginFresco) {
     mostrarErrorDeArranque('No se pudo cargar la información. Revisa tu conexión e intenta de nuevo.');
     return;
   }
+  // Si esto falla (Realtime no habilitado, red inestable justo en ese momento), la app entera no
+  // debe quedar bloqueada por eso — se sigue sin sincronización en vivo, no sin la app.
+  try { iniciarRealtime(); } catch (e) { console.error('No se pudo iniciar Realtime:', e); }
   renderSidebarUsuario();
   document.body.classList.remove('mostrando-login');
   document.body.classList.add('mostrando-app');
