@@ -1606,6 +1606,10 @@ function manejarCambioRealtime(payload) {
   const fila = evento === 'DELETE' ? payload.old : payload.new;
   if (!fila || !fila.id) return; // DELETE sin REPLICA IDENTITY FULL en la tabla: no hay ni id, no se puede ubicar nada
   if (esEcoDeEscrituraPropia(fila.id)) return; // mi propio cambio volviendo: ya está aplicado, y reaplicarlo pisaría lo que siga escribiendo
+  // Una línea por cambio recibido de otra persona. Son pocos (uno por edición, no por tecla) y
+  // hacen que diagnosticar esto sea inmediato: si acá no aparece nada cuando alguien más guarda, el
+  // problema es la conexión; si aparece pero la pantalla no cambia, el problema es el repintado.
+  console.log('Realtime: llegó', evento, 'en', tabla, '(id ' + fila.id + ')');
   const fusionar = REALTIME_TABLAS[tabla];
   if (!fusionar) return;
   fusionar(evento, fila);
@@ -1638,8 +1642,8 @@ function campoIdentidad(el) {
 
 let _presenciaRemota = []; // [{ userId, nombre, campo }] — nunca incluye la propia presencia
 function transmitirPresencia(campo) {
-  if (!_canalRealtime || !ui.usuarioActual) return;
-  _canalRealtime.track({ userId: ui.usuarioActual.id, nombre: ui.usuarioActual.nombre, campo: campo || null });
+  if (!_canalPresencia || !ui.usuarioActual) return;
+  _canalPresencia.track({ userId: ui.usuarioActual.id, nombre: ui.usuarioActual.nombre, campo: campo || null });
 }
 
 // Vuelve a calcular desde cero, cada vez, qué campos deben verse marcados — más simple y más
@@ -1730,10 +1734,25 @@ function pintarEstadoSincronizacion() {
   const txt = document.getElementById('sync-indicator-text');
   if (!ind || !txt) return;
   ind.classList.toggle('sync-off', !_realtimeConectado);
-  txt.textContent = _realtimeConectado ? 'En vivo' : 'Sin conexión en vivo';
+  // El texto dice lo que REALMENTE está pasando. La primera versión decía "Sin conexión en vivo con
+  // el servidor", que se lee como "esto no está funcionando" — y es falso: cuando el canal instantáneo
+  // no está, la app sigue sincronizando sola cada pocos segundos. Asustaba sin motivo.
+  txt.textContent = _realtimeConectado ? 'En vivo' : 'Sincroniza cada ' + Math.round(RESINCRONIZAR_CADA_MS / 1000) + 's';
   ind.title = _realtimeConectado
-    ? 'Los cambios de otras personas aparecen al instante.'
-    : 'No hay conexión en vivo con el servidor. Los cambios de otras personas igual aparecen, pero cada pocos segundos en vez de al instante.';
+    ? 'Conexión instantánea: los cambios de otras personas aparecen al momento.'
+    : 'Sin conexión instantánea en este momento, pero los cambios de otras personas siguen llegando: la app revisa el servidor cada ' + Math.round(RESINCRONIZAR_CADA_MS / 1000) + ' segundos. No se pierde nada.';
+}
+
+// El indicador no puede depender solo del último aviso del canal: si hubo un hipo y el canal se
+// recuperó sin volver a avisar, se quedaba en rojo para siempre aunque todo estuviera bien (y al
+// revés). Phoenix expone el estado real del canal, así que se consulta cada tanto y manda eso.
+function revisarEstadoRealDelCanal() {
+  const estado = _canalDatos ? _canalDatos.state : null;
+  marcarEstadoRealtime(estado === 'joined');
+  // 'joining' quiere decir que ya se está reconectando solo: ahí no hay que meter mano. Pero un
+  // canal que se quedó en 'errored'/'closed' no siempre se recupera por su cuenta, y si nadie lo
+  // levanta se queda así el resto de la sesión.
+  if (estado === 'errored' || estado === 'closed') reintentarCanalDatos();
 }
 function programarResincronizacion() {
   clearInterval(_intervaloResincronizar);
@@ -1747,26 +1766,34 @@ function marcarEstadoRealtime(conectado) {
   pintarEstadoSincronizacion();
 }
 
-let _canalRealtime = null;
+/* Dos canales separados, a propósito — esto era el origen de "funciona 5 segundos y después a uno
+   de los dos se le cae la conexión":
+
+   - Los avisos de cambios en la base (postgres_changes) se registran en el servidor POR NOMBRE DE
+     CANAL. Al llamarse igual para todo el mundo ('cambios-en-vivo'), dos personas —o dos pestañas—
+     terminaban peleándose las mismas suscripciones, y una de las dos quedaba sin recibir nada o
+     directamente con el canal caído, a los pocos segundos de que la segunda entrara. Por eso el
+     canal de datos ahora lleva un nombre único por sesión.
+   - La presencia (quién está en qué campo) necesita exactamente lo contrario: un canal COMPARTIDO,
+     porque su sentido es verse entre todos. Ese se queda con un nombre fijo.
+
+   Separarlos además los vuelve independientes: si uno se cae, el otro sigue funcionando. */
+const ID_SESION_CANAL = Math.random().toString(36).slice(2) + Date.now().toString(36);
+let _canalDatos = null;
+let _canalPresencia = null;
 let _intervaloPresencia = null;
 let _yaEstuvoSuscrito = false;
 function iniciarRealtime() {
-  if (_canalRealtime) return; // ya conectado — no duplicar la suscripción (p.ej. si esto se llamara dos veces)
-  _canalRealtime = sb.channel('cambios-en-vivo');
+  if (_canalDatos) return; // ya conectado — no duplicar la suscripción (p.ej. si esto se llamara dos veces)
+
+  _canalDatos = sb.channel('datos-' + ID_SESION_CANAL);
   Object.keys(REALTIME_TABLAS).forEach(tabla => {
-    _canalRealtime.on('postgres_changes', { event: '*', schema: 'public', table: tabla }, manejarCambioRealtime);
+    _canalDatos.on('postgres_changes', { event: '*', schema: 'public', table: tabla }, manejarCambioRealtime);
   });
-  _canalRealtime.on('presence', { event: 'sync' }, () => {
-    const estado = _canalRealtime.presenceState();
-    _presenciaRemota = Object.values(estado).flat()
-      .filter(p => p.userId && (!ui.usuarioActual || p.userId !== ui.usuarioActual.id))
-      .map(p => ({ userId: p.userId, nombre: p.nombre, campo: p.campo }));
-    aplicarPresenciaVisible();
-  });
-  _canalRealtime.subscribe(estado => {
+  _canalDatos.subscribe(estado => {
     if (estado === 'SUBSCRIBED') {
       marcarEstadoRealtime(true);
-      transmitirPresencia(null);
+      _esperaReintento = 3000; // conexión sana: la espera del próximo reintento vuelve a empezar corta
       // La PRIMERA suscripción no necesita resincronizar (continuarConSesion() acaba de cargar
       // todo). Cualquier siguiente sí: significa que la conexión se cayó y volvió, y nada de lo que
       // pasó mientras estuvo caída se reenvía.
@@ -1774,16 +1801,56 @@ function iniciarRealtime() {
       _yaEstuvoSuscrito = true;
       return;
     }
-    // CHANNEL_ERROR / TIMED_OUT / CLOSED. supabase-js reintenta la conexión por su cuenta; mientras
-    // tanto se dice en pantalla y el respaldo periódico se acelera, en vez de dejar al usuario
-    // adivinando por qué no le aparecen los cambios de los demás.
+    // CHANNEL_ERROR / TIMED_OUT / CLOSED: se dice en pantalla, el respaldo periódico se acelera, y
+    // se vuelve a intentar la suscripción desde cero (supabase-js reintenta el socket, pero un
+    // canal que quedó en error no siempre se recupera solo).
     marcarEstadoRealtime(false);
-    console.warn('Realtime: el canal reportó el estado "' + estado + '" — sin sincronización instantánea por ahora.');
+    console.warn('Realtime: el canal de datos reportó "' + estado + '" — sin sincronización instantánea por ahora.');
+    reintentarCanalDatos();
   });
+
+  // El de presencia se crea una sola vez y sobrevive a los reintentos del canal de datos (que lo
+  // llaman de nuevo a esta función): son independientes justamente para que un problema en uno no
+  // arrastre al otro, y volver a crearlo dejaría una presencia duplicada por cada reintento.
+  if (!_canalPresencia) {
+    _canalPresencia = sb.channel('presencia-odetta');
+    _canalPresencia.on('presence', { event: 'sync' }, () => {
+      const estado = _canalPresencia.presenceState();
+      _presenciaRemota = Object.values(estado).flat()
+        .filter(p => p.userId && (!ui.usuarioActual || p.userId !== ui.usuarioActual.id))
+        .map(p => ({ userId: p.userId, nombre: p.nombre, campo: p.campo }));
+      aplicarPresenciaVisible();
+    });
+    _canalPresencia.subscribe(estado => { if (estado === 'SUBSCRIBED') transmitirPresencia(null); });
+  }
+
   // Autocorrección cada 2s: si algo se volvió a pintar de por medio (una fusión de datos, un
   // guardado propio) y se perdió una marca de presencia, esto la vuelve a poner sin esperar a que
   // alguien más cambie de campo para que llegue un nuevo evento de sincronización.
-  _intervaloPresencia = setInterval(aplicarPresenciaVisible, 2000);
+  if (!_intervaloPresencia) _intervaloPresencia = setInterval(() => {
+    aplicarPresenciaVisible();
+    revisarEstadoRealDelCanal();
+  }, 2000);
+}
+
+// Vuelve a crear el canal de datos desde cero tras un error, con una espera creciente para no
+// machacar al servidor si el problema es suyo. La resincronización periódica sigue corriendo
+// mientras tanto, así que aunque esto tarde, los datos no se quedan viejos.
+let _reintentoCanal = null;
+let _esperaReintento = 3000;
+function reintentarCanalDatos() {
+  if (_reintentoCanal) return; // ya hay un reintento programado
+  _reintentoCanal = setTimeout(() => {
+    _reintentoCanal = null;
+    _esperaReintento = Math.min(_esperaReintento * 2, 60000);
+    try {
+      if (_canalDatos) sb.removeChannel(_canalDatos);
+      _canalDatos = null;
+      iniciarRealtime();
+    } catch (e) {
+      console.error('No se pudo recrear el canal de datos:', e);
+    }
+  }, _esperaReintento);
 }
 
 /* ============================================================
