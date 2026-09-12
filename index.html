@@ -520,6 +520,19 @@ body.mostrando-app #contenedor-app{ display:contents; }
   background:var(--surface-2); color:var(--ink-soft); font-size:.6rem;
 }
 
+/* Paleta para elegir el color de una persona */
+.paleta-colores{ display:flex; flex-wrap:wrap; gap:8px; }
+.muestra-color{
+  width:30px; height:30px; border-radius:50%; border:2px solid transparent; cursor:pointer; padding:0;
+  box-shadow:0 0 0 1px var(--line); transition:transform .12s ease, box-shadow .12s ease;
+}
+.muestra-color:hover{ transform:scale(1.08); }
+.muestra-color.is-activa{ border-color:var(--surface); box-shadow:0 0 0 2px var(--ink); }
+.muestra-color.muestra-auto{
+  background:var(--surface-2); color:var(--ink-faint); font-size:.55rem; font-weight:700;
+  text-transform:uppercase; letter-spacing:.03em;
+}
+
 /* Burbujas de aviso: entran deslizándose por la esquina inferior derecha y se van solas. */
 .avisos-cambios{
   /* Por encima de TODO lo de la app, sin importar la pantalla ni el rol. Las capas del archivo, de
@@ -1784,14 +1797,39 @@ function manejarCambioRealtime(payload) {
 
 // Un color estable por persona (mismo id → mismo color siempre), sin necesitar coordinarlos entre
 // sí ni guardar una lista de colores usados — un hash simple del id alcanza.
-function colorParaUsuario(userId) {
+/* Colores que se pueden elegir para una persona. Se guarda solo el tono (0-360) y las tres
+   variantes —borde, fondo suave y círculo oscuro— se siguen calculando con la misma fórmula de
+   siempre, así que elegir un color no puede romper el contraste ni inventar combinaciones raras.
+   Quien no haya elegido ninguno conserva el que tiene hoy (el que sale de su propio id). */
+const COLORES_USUARIO = [
+  { hue: 4, nombre: 'Rojo' }, { hue: 28, nombre: 'Naranja' }, { hue: 45, nombre: 'Ámbar' },
+  { hue: 92, nombre: 'Oliva' }, { hue: 145, nombre: 'Verde' }, { hue: 185, nombre: 'Turquesa' },
+  { hue: 215, nombre: 'Azul' }, { hue: 265, nombre: 'Morado' }, { hue: 320, nombre: 'Rosa' }
+];
+function colorParaUsuario(userId, tonoElegido) {
+  // null/undefined se descartan ANTES de convertir: Number(null) da 0, que es un tono válido (rojo),
+  // así que sin este chequeo toda persona sin color elegido —que es como llega de la base de datos—
+  // se habría vuelto roja de golpe.
+  if (tonoElegido !== null && tonoElegido !== undefined && String(tonoElegido).trim() !== '') {
+    const elegido = Number(tonoElegido);
+    if (Number.isFinite(elegido)) return tonoAColores(((elegido % 360) + 360) % 360);
+  }
   let hash = 0;
   const texto = String(userId);
   for (let i = 0; i < texto.length; i++) hash = (hash * 31 + texto.charCodeAt(i)) | 0;
-  const hue = Math.abs(hash) % 360;
-  // `avatar` es el mismo tono pero bastante más oscuro, porque ahí encima van las iniciales en
-  // blanco: con la luminosidad del borde (50%) un tono amarillo dejaría el texto casi ilegible.
-  return { borde: `hsl(${hue} 55% 50%)`, fondo: `hsl(${hue} 70% 94%)`, avatar: `hsl(${hue} 45% 34%)` };
+  return tonoAColores(Math.abs(hash) % 360);
+}
+function tonoAColores(hue) {
+  /* `borde` y `avatar` son EXACTAMENTE el mismo color a propósito: el contorno del campo donde una
+     persona tiene el cursor es idéntico a su círculo del encabezado, y eso es lo que hace que se
+     asocien de un vistazo. Antes el círculo era oscuro (34%) y el contorno más claro (50%), y se
+     leían como dos colores distintos — que es justo lo que se notaba raro.
+     El valor está elegido para servir a los dos usos: suficientemente oscuro para que las iniciales
+     blancas del círculo se lean en cualquier tono, y suficientemente vivo para que el tono se
+     reconozca (el naranja tiene que verse naranja, no marrón). El fondo es el mismo tono muy claro,
+     con bastante saturación para que el campo se note sin competir con el texto negro de adentro. */
+  const principal = `hsl(${hue} 58% 42%)`;
+  return { borde: principal, avatar: principal, fondo: `hsl(${hue} 78% 90%)` };
 }
 
 // La misma tripleta entidad+id+campo que ya identifica un campo editable para aplicarCampo() — se
@@ -1824,6 +1862,7 @@ function enviarPresenciaAhora() {
       userId: ui.usuarioActual.id,
       nombre: ui.usuarioActual.nombre,
       campo: _campoPresenciaPropia,
+      color: ui.usuarioActual.color,
       ubicacion: donde.texto,
       ambitoUbicacion: donde.ambito
     });
@@ -1883,7 +1922,7 @@ function mostrarBurbujaCambio(aviso) {
     const vivas = [...cont.querySelectorAll('.burbuja-cambio')].filter(b => !b.classList.contains('saliendo'));
     if (vivas.length > MAX_BURBUJAS) cerrarBurbuja(vivas[0]);
   }
-  const color = colorParaUsuario(aviso.autorId || aviso.autor || '?');
+  const color = colorParaUsuario(aviso.autorId || aviso.autor || '?', aviso.color);
   burbuja.innerHTML = `<span class="punto" style="background:${color.avatar}"></span><span class="texto">${texto}</span>`;
   burbuja.style.setProperty('--color-burbuja', color.avatar);
   clearTimeout(burbuja._temporizador);
@@ -1955,7 +1994,7 @@ function renderUsuariosConectados() {
     return (p.nombre || 'Alguien') + (donde ? ' · ' + donde : '') + escribiendo;
   };
   cont.innerHTML = visibles.map(p => {
-    const color = colorParaUsuario(p.userId);
+    const color = colorParaUsuario(p.userId, p.color);
     return `<div class="avatar-mini" style="background:${color.avatar}" title="${esc(descripcion(p))}">${esc(iniciales(p.nombre))}</div>`;
   }).join('') + (resto > 0 ? `<div class="avatar-mini mas" title="${esc(gente.slice(MAX_AVATARES_CONECTADOS).map(descripcion).join('\n'))}">+${resto}</div>` : '');
 }
@@ -1975,7 +2014,7 @@ function aplicarPresenciaVisible() {
     const [entidad, id, campo] = p.campo.split('|');
     const el = document.querySelector(`[data-entidad="${entidad}"][data-id="${id}"][data-campo="${campo}"]`);
     if (!el) return; // esa pantalla no está abierta ahora mismo en este navegador — nada que marcar
-    const color = colorParaUsuario(p.userId);
+    const color = colorParaUsuario(p.userId, p.color);
     el.classList.add('presencia-remota');
     el.style.setProperty('--color-presencia-borde', color.borde);
     el.style.setProperty('--color-presencia-fondo', color.fondo);
@@ -2080,6 +2119,7 @@ function avisarCambiosALasOtrasSesiones() {
         origen: ID_SESION_CANAL,
         autor: ui.usuarioActual ? ui.usuarioActual.nombre : '',
         autorId: ui.usuarioActual ? ui.usuarioActual.id : '',
+        color: ui.usuarioActual ? ui.usuarioActual.color : null,
         ambito,
         cliente: cliente ? cliente.nombre : ''
       }
@@ -2226,7 +2266,7 @@ function crearCanalPresencia() {
     const estado = _canalPresencia.presenceState();
     _presenciaRemota = Object.values(estado).flat()
       .filter(p => p.userId && (!ui.usuarioActual || p.userId !== ui.usuarioActual.id))
-      .map(p => ({ userId: p.userId, nombre: p.nombre, campo: p.campo, ubicacion: p.ubicacion, ambitoUbicacion: p.ambitoUbicacion }));
+      .map(p => ({ userId: p.userId, nombre: p.nombre, campo: p.campo, color: p.color, ubicacion: p.ubicacion, ambitoUbicacion: p.ambitoUbicacion }));
     aplicarPresenciaVisible();
     renderUsuariosConectados();
   });
@@ -4159,7 +4199,7 @@ function crearCatalogoDesdeCombobox(nombre) {
 async function cargarUsuariosAdmin() {
   ui.adminCargandoUsuarios = true;
   if (ui.vista === 'admin') renderVistaAdmin();
-  const { data, error } = await sb.from('profiles').select('id, nombre, email, cargo, avatar_url, rol, created_at').order('created_at');
+  const { data, error } = await sb.from('profiles').select('id, nombre, email, cargo, avatar_url, rol, color, created_at').order('created_at');
   ui.adminUsuarios = error ? [] : (data || []);
   ui.adminCargandoUsuarios = false;
   if (ui.vista === 'admin') renderVistaAdmin();
@@ -4254,6 +4294,18 @@ function renderModalEditarUsuario() {
           </select>
         </div>
       </div>
+      <div class="field" style="margin-top:4px;">
+        <label>Color</label>
+        <div class="hint" style="margin-bottom:8px;">Es el color con el que esta persona se ve para los demás: su círculo de conectado, el aviso cuando cambia algo, y el campo donde tiene el cursor.</div>
+        <div class="paleta-colores" id="editar-usuario-color" data-tono="${esc(u.color === null || u.color === undefined ? '' : u.color)}">
+          ${COLORES_USUARIO.map(c => {
+            const col = colorParaUsuario(u.id, c.hue);
+            const activo = String(u.color) === String(c.hue);
+            return `<button type="button" class="muestra-color${activo ? ' is-activa' : ''}" data-action="elegir-color-usuario" data-tono="${c.hue}" style="background:${col.avatar}" title="${esc(c.nombre)}"></button>`;
+          }).join('')}
+          <button type="button" class="muestra-color muestra-auto${u.color === null || u.color === undefined ? ' is-activa' : ''}" data-action="elegir-color-usuario" data-tono="" title="Automático (el que tiene hoy)">auto</button>
+        </div>
+      </div>
       ${ui.modalEditarUsuarioError ? `<div class="login-error" style="display:block;margin-top:14px;">${esc(ui.modalEditarUsuarioError)}</div>` : ''}
       <div class="modal-foot">
         <button type="submit" class="btn btn-primary" ${ui.modalEditarUsuarioEnviando ? 'disabled' : ''}>${ui.modalEditarUsuarioEnviando ? 'Guardando…' : 'Guardar'}</button>
@@ -4269,12 +4321,15 @@ async function guardarEdicionUsuario() {
   const cargo = document.getElementById('editar-usuario-cargo').value.trim();
   const rolEl = document.getElementById('editar-usuario-rol');
   const rol = rolEl.disabled ? usuario.rol : rolEl.value;
+  // El tono vive en el contenedor de la paleta (lo actualiza el botón elegido). Vacío = automático.
+  const paleta = document.getElementById('editar-usuario-color');
+  const tono = paleta && String(paleta.dataset.tono).trim() !== '' ? Number(paleta.dataset.tono) : null;
 
   ui.modalEditarUsuarioEnviando = true;
   ui.modalEditarUsuarioError = null;
   renderModalEditarUsuario();
 
-  const { error } = await sb.from('profiles').update({ nombre, cargo, rol }).eq('id', id);
+  const { error } = await sb.from('profiles').update({ nombre, cargo, rol, color: tono }).eq('id', id);
   ui.modalEditarUsuarioEnviando = false;
   if (error) {
     ui.modalEditarUsuarioError = 'No se pudo guardar: ' + error.message;
@@ -4877,7 +4932,7 @@ function renderAdminUsuarios() {
       <thead><tr><th></th><th>Nombre</th><th>Correo</th><th>Cargo</th><th>Rol</th><th>Creado</th><th></th></tr></thead>
       <tbody>${ui.adminUsuarios.map(u => `
         <tr>
-          <td><div class="avatar-mini" style="overflow:hidden;">${u.avatar_url ? `<img src="${esc(u.avatar_url)}" style="width:100%;height:100%;object-fit:cover;">` : esc(iniciales(u.nombre))}</div></td>
+          <td><div class="avatar-mini" style="overflow:hidden;background:${colorParaUsuario(u.id, u.color).avatar}" title="Así se ve esta persona para los demás">${u.avatar_url ? `<img src="${esc(u.avatar_url)}" style="width:100%;height:100%;object-fit:cover;">` : esc(iniciales(u.nombre))}</div></td>
           <td><b>${esc(u.nombre) || 'Sin nombre'}</b>${u.id === ui.usuarioActual.id ? ' <span class="hint">(tú)</span>' : ''}</td>
           <td class="mono">${esc(u.email) || '—'}</td>
           <td>${esc(u.cargo) || '—'}</td>
@@ -5012,6 +5067,13 @@ document.body.addEventListener('click', e => {
     'abrir-modal-editar-usuario': () => abrirModalEditarUsuario(id),
     'cerrar-modal-editar-usuario': () => cerrarModalEditarUsuario(),
     'elegir-avatar': () => { const el = document.querySelector('.avatar-file-input'); if (el) el.click(); },
+    'elegir-color-usuario': () => {
+      const paleta = document.getElementById('editar-usuario-color');
+      if (!paleta) return;
+      paleta.dataset.tono = btn.dataset.tono;
+      // Se marca la elegida sin repintar el modal entero, para no perder lo escrito en los otros campos.
+      paleta.querySelectorAll('.muestra-color').forEach(m => m.classList.toggle('is-activa', m.dataset.tono === btn.dataset.tono));
+    },
     'descargar-backup': () => descargarCopiaSeguridad(),
     'reintentar-auditoria': () => cargarAuditoria(),
     'confirmacion-cancelar': () => resolverConfirmacion(false),
@@ -5261,7 +5323,7 @@ async function continuarConSesion(session, esLoginFresco) {
   let perfil, error;
   try {
     ({ data: perfil, error } = await conTiempoLimite(
-      sb.from('profiles').select('nombre, rol, avatar_url').eq('id', session.user.id).maybeSingle(), 15000));
+      sb.from('profiles').select('nombre, rol, avatar_url, color').eq('id', session.user.id).maybeSingle(), 15000));
   } catch (e) {
     mostrarErrorDeArranque('No se pudo conectar con el servidor. Revisa tu conexión e intenta de nuevo.');
     return;
@@ -5270,7 +5332,7 @@ async function continuarConSesion(session, esLoginFresco) {
     mostrarPantallaLogin('No se pudo cargar tu perfil. Contacta a un administrador.');
     return;
   }
-  ui.usuarioActual = { id: session.user.id, email: session.user.email, nombre: perfil.nombre || session.user.email, rol: perfil.rol, avatar_url: perfil.avatar_url || null };
+  ui.usuarioActual = { id: session.user.id, email: session.user.email, nombre: perfil.nombre || session.user.email, rol: perfil.rol, avatar_url: perfil.avatar_url || null, color: perfil.color };
   try {
     await conTiempoLimite(cargar(), 30000);
   } catch (e) {
