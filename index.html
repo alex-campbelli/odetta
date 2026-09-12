@@ -1372,6 +1372,11 @@ async function guardar() {
     })(), 30000);
 
     _ultimoEstadoSincronizado = enviado;
+    // Lo que había escrito ya está guardado: el campo deja de estar "protegido", para que un cambio
+    // que llegue después de otra persona sí se vea (si no, quedaría blindado mientras siguiera el
+    // cursor ahí y volveríamos al problema de no ver los cambios ajenos).
+    const enfocado = document.activeElement;
+    if (enfocado && enfocado._editadoPorMi) enfocado._editadoPorMi = false;
     if (_huboEscrituras) { _huboEscrituras = false; avisarCambiosALasOtrasSesiones(); }
     marcarGuardado();
   } catch (e) {
@@ -1598,14 +1603,68 @@ function algoEnfocadoDentroDe(contenedorId) {
   return !!(cont && cont.contains(document.activeElement));
 }
 
+/* ---------- Repintar sin quitarle el cursor a nadie ----------
+   Antes, si alguien tenía el cursor dentro de la pantalla, simplemente NO se repintaba: era la
+   forma segura de no interrumpir a nadie, pero tenía un costo que el usuario notó enseguida — si
+   otra persona cambiaba justo el campo donde uno tenía el cursor, ese cambio no se veía hasta
+   recargar la página.
+
+   Ahora se repinta igual y después se devuelve todo a su sitio: el mismo campo vuelve a tener el
+   foco y el cursor en la misma posición. Y si esa persona además había escrito algo que todavía no
+   se guardaba, se le devuelve SU texto — su edición en curso siempre gana sobre lo que acaba de
+   llegar; el cambio ajeno ya quedó en memoria y se verá en cuanto salga del campo. */
+function repintarConservandoElCursor(repintar) {
+  const activo = document.activeElement;
+  const identidad = activo ? campoIdentidad(activo) : null;
+  if (!identidad) {
+    repintar();
+    // Repintar reconstruye el HTML y se lleva por delante los colores que marcan dónde está cada
+    // persona: hay que volver a ponerlos enseguida. Si no, se apagaban hasta el siguiente repaso
+    // (hasta 2 segundos después), y se veían parpadear justo cuando más cambios están llegando.
+    aplicarPresenciaVisible();
+    return false;
+  }
+
+  const [entidad, id, campo] = identidad.split('|');
+  // selectionStart no existe en algunos tipos de campo (date, number en varios navegadores)
+  let inicio = null, fin = null;
+  try { inicio = activo.selectionStart; fin = activo.selectionEnd; } catch (e) { /* ese tipo de campo no lo soporta */ }
+  const textoSinGuardar = activo._editadoPorMi ? activo.value : null;
+
+  repintar();
+
+  const nuevo = document.querySelector(`[data-entidad="${entidad}"][data-id="${id}"][data-campo="${campo}"]`);
+  if (!nuevo) return false; // ese campo ya no está en pantalla (se borró la fila, se cambió de vista)
+  if (textoSinGuardar !== null) {
+    nuevo.value = textoSinGuardar;
+    nuevo._editadoPorMi = true;
+    // No alcanza con devolverlo a la pantalla: lo que trajo el repintado ya reemplazó este campo en
+    // memoria, así que hay que volver a poner ahí lo que esta persona tiene escrito y dejar
+    // programado su guardado. Si no, su texto quedaría solo a la vista y se perdería al salir.
+    aplicarCampo(entidad, id, campo, valorDeCampoDesdeInput(nuevo));
+    guardarDebounced();
+  }
+  nuevo.focus();
+  if (inicio !== null) { try { nuevo.setSelectionRange(inicio, fin); } catch (e) { /* idem */ } }
+  return true;
+}
+
 // Reemplaza (o quita, si htmlNuevo es null) una sola fila de una tabla — deja cualquier otra fila,
 // y el cursor de quien esté editando ahí, completamente intactos. Si el usuario tiene el cursor
 // justo DENTRO de esa fila, no se toca nada (se aplica en el próximo cambio, o al volver a esa
 // pantalla) — es la regla que evita interrumpir a alguien a mitad de una edición.
-function reemplazarFilaSiNoEnfocada(selectorFila, htmlNuevo) {
+function reemplazarFilaConservandoElCursor(selectorFila, htmlNuevo) {
   const fila = document.querySelector(selectorFila);
   if (!fila) return false;
-  if (fila.contains(document.activeElement)) return false;
+  // Si el cursor está dentro de esta misma fila, igual se reemplaza — pero devolviéndole después el
+  // foco, la posición del cursor y lo que estuviera escribiendo. Antes se dejaba la fila intacta, y
+  // por eso un cambio ajeno en el campo donde uno tenía el cursor no se veía hasta recargar.
+  if (fila.contains(document.activeElement)) {
+    return repintarConservandoElCursor(() => {
+      if (htmlNuevo === null) fila.remove();
+      else fila.outerHTML = htmlNuevo;
+    });
+  }
   if (htmlNuevo === null) fila.remove();
   else fila.outerHTML = htmlNuevo;
   return true;
@@ -1645,12 +1704,19 @@ const CONFIG_CATALOGO_REALTIME = {
 // momento — si lo tiene, se deja tal cual por ahora (el dato ya quedó bien fusionado en memoria, se
 // ve correcto la próxima vez que se entre o se navegue a otra pantalla y se vuelva).
 function pintarCambioRealtime(tabla, evento, fila) {
+  pintarCambioRealtimeSegunVista(tabla, evento, fila);
+  // Pase por donde pase el repintado de arriba, reconstruir HTML se lleva por delante los colores
+  // que marcan en qué campo está cada persona. Reponerlos acá, en el único punto de salida, evita
+  // tener que acordarse en cada rama — y evita que se apaguen hasta el repaso de los 2 segundos.
+  aplicarPresenciaVisible();
+}
+function pintarCambioRealtimeSegunVista(tabla, evento, fila) {
   // El modal de costos de personal se atiende primero y aparte: vive en el overlay compartido, no
   // dentro del contenedor de ninguna vista, así que ninguna de las reglas de abajo lo alcanza. Se
   // repinta entero (un anticipo nuevo de otra persona es una fila que todavía no existe en la
   // tabla, no algo que se pueda parchar fila por fila) y solo si nadie está escribiendo ahí dentro.
-  if (TABLAS_PERSONAL.includes(tabla) && modalPersonalEstaPintado() && !algoEnfocadoDentroDe('modal-content')) {
-    renderModalPersonal();
+  if (TABLAS_PERSONAL.includes(tabla) && modalPersonalEstaPintado()) {
+    repintarConservandoElCursor(renderModalPersonal);
   }
 
   const lectura = VISTAS_REALTIME_SOLO_LECTURA[ui.vista];
@@ -1664,7 +1730,7 @@ function pintarCambioRealtime(tabla, evento, fila) {
   if (ui.vista === 'catalogo') {
     const cfg = CONFIG_CATALOGO_REALTIME[tabla];
     if (cfg && ui.catalogoSubVista === cfg.subvista) {
-      reemplazarFilaSiNoEnfocada(`#catalogo-contenido tr[data-id="${fila.id}"]`, evento === 'DELETE' ? null : cfg.renderFila(cfg.mapear(fila)));
+      reemplazarFilaConservandoElCursor(`#catalogo-contenido tr[data-id="${fila.id}"]`, evento === 'DELETE' ? null : cfg.renderFila(cfg.mapear(fila)));
     }
     return;
   }
@@ -1672,17 +1738,17 @@ function pintarCambioRealtime(tabla, evento, fila) {
   // La pestaña de mano de obra del editor de cliente muestra el saldo de cada trabajador, que
   // cambia con cualquiera de las tres tablas de personal — no solo con registros_personal.
   if (ui.vista === 'editor-cliente' && ['clientes', 'presupuestos', ...TABLAS_PERSONAL].includes(tabla)) {
-    if (!algoEnfocadoDentroDe('editor-cliente-contenido')) renderEditorCliente();
+    repintarConservandoElCursor(renderEditorCliente);
     return;
   }
 
   if (ui.vista === 'panel-supervisor' && ['clientes', 'presupuestos', ...TABLAS_PERSONAL].includes(tabla)) {
-    if (!algoEnfocadoDentroDe('panel-supervisor-contenido')) renderPanelSupervisor();
+    repintarConservandoElCursor(renderPanelSupervisor);
     return;
   }
 
   if (ui.vista === 'admin' && ui.adminSubVista === 'config' && tabla === 'empresa_config') {
-    if (!algoEnfocadoDentroDe('admin-contenido')) renderVistaAdmin();
+    repintarConservandoElCursor(renderVistaAdmin);
   }
 }
 
@@ -1731,6 +1797,7 @@ function colorParaUsuario(userId) {
 // La misma tripleta entidad+id+campo que ya identifica un campo editable para aplicarCampo() — se
 // reutiliza tal cual como la "dirección" que se transmite/recibe por presencia.
 function campoIdentidad(el) {
+  if (!el || !el.dataset) return null; // document.body, un SVG, o nada enfocado
   const entidad = el.dataset.entidad, id = el.dataset.id, campo = el.dataset.campo;
   return (entidad && campo) ? `${entidad}|${id}|${campo}` : null;
 }
@@ -1749,8 +1816,17 @@ let _presenciaRemota = []; // [{ userId, nombre, campo }] — nunca incluye la p
 let _campoPresenciaPropia = null;
 function enviarPresenciaAhora() {
   if (!_canalPresencia || !ui.usuarioActual) return;
+  // La ubicación se calcula en el momento de mandar, no cuando se pidió: así un cambio de pantalla
+  // viaja con el siguiente aviso sin tener que llevar la cuenta por separado.
+  const donde = state ? ubicacionActual() : { texto: '', ambito: null };
   try {
-    _canalPresencia.track({ userId: ui.usuarioActual.id, nombre: ui.usuarioActual.nombre, campo: _campoPresenciaPropia });
+    _canalPresencia.track({
+      userId: ui.usuarioActual.id,
+      nombre: ui.usuarioActual.nombre,
+      campo: _campoPresenciaPropia,
+      ubicacion: donde.texto,
+      ambitoUbicacion: donde.ambito
+    });
   } catch (e) {
     console.warn('No se pudo anunciar la posición:', e);
   }
@@ -1823,6 +1899,45 @@ function recibirAvisoDeCambio(aviso) {
 }
 
 const MAX_AVATARES_CONECTADOS = 4;
+/* ---------- En qué pantalla anda cada quien ----------
+   Se transmite junto con la presencia (no cuesta nada: es el mismo mensaje que ya viaja al cambiar
+   de campo) y se muestra al pasar el mouse por el círculo de esa persona. Cuando se está dentro de
+   un cliente o un presupuesto se dice cuál, que es lo que de verdad sirve para coordinarse.
+   Cada ubicación lleva su ámbito para poder aplicar la misma regla de roles que las burbujas: a
+   quien no le corresponde ver esa parte de la app se le dice "en otra pantalla" en vez del nombre. */
+const UBICACIONES = {
+  'dashboard': { texto: 'Inicio', ambito: 'presupuestos' },
+  'listado-clientes': { texto: 'Clientes', ambito: 'clientes' },
+  'catalogo': { texto: 'Catálogo', ambito: 'catalogo' },
+  'vista-costos-personal': { texto: 'Costos de personal', ambito: 'mano-de-obra' },
+  'panel-supervisor': { texto: 'Mano de obra', ambito: 'mano-de-obra' },
+  'admin': { texto: 'Configuraciones', ambito: 'configuracion' },
+  'auditoria': { texto: 'Auditoría', ambito: 'configuracion' }
+};
+function ubicacionActual() {
+  const vista = ui.vista;
+  if (vista === 'editor-cliente') {
+    const c = clienteActivo();
+    return { texto: c ? c.nombre || 'un cliente sin nombre' : 'Clientes', ambito: 'clientes' };
+  }
+  if (vista === 'editor-presupuesto' || vista === 'vista-cliente') {
+    const p = vista === 'editor-presupuesto'
+      ? state.presupuestos.find(x => x.id === ui.presupuestoActivoId)
+      : state.presupuestos.find(x => x.id === ui.vistaClienteId);
+    const c = p ? encontrarCliente(p.clienteId) : null;
+    const numero = p ? p.numero : '';
+    return { texto: (numero ? numero : 'Un presupuesto') + (c && c.nombre ? ' · ' + c.nombre : ''), ambito: 'presupuestos' };
+  }
+  return UBICACIONES[vista] || { texto: '', ambito: null };
+}
+// Lo que se le muestra a QUIEN RECIBE, según su propio rol.
+function textoUbicacionPara(presencia) {
+  if (!presencia || !presencia.ubicacion) return '';
+  const rol = ui.usuarioActual ? ui.usuarioActual.rol : 'operario';
+  if (presencia.ambitoUbicacion && !puedeVerAmbito(rol, presencia.ambitoUbicacion)) return 'en otra pantalla';
+  return 'en ' + presencia.ubicacion;
+}
+
 function renderUsuariosConectados() {
   const cont = document.getElementById('usuarios-conectados');
   if (!cont) return;
@@ -1834,11 +1949,15 @@ function renderUsuariosConectados() {
 
   const visibles = gente.slice(0, MAX_AVATARES_CONECTADOS);
   const resto = gente.length - visibles.length;
+  const descripcion = (p) => {
+    const donde = textoUbicacionPara(p);
+    const escribiendo = p.campo ? ' · escribiendo' : '';
+    return (p.nombre || 'Alguien') + (donde ? ' · ' + donde : '') + escribiendo;
+  };
   cont.innerHTML = visibles.map(p => {
     const color = colorParaUsuario(p.userId);
-    const donde = p.campo ? ' — está editando algo ahora mismo' : '';
-    return `<div class="avatar-mini" style="background:${color.avatar}" title="${esc(p.nombre || 'Alguien')}${donde} · conectado">${esc(iniciales(p.nombre))}</div>`;
-  }).join('') + (resto > 0 ? `<div class="avatar-mini mas" title="${esc(gente.slice(MAX_AVATARES_CONECTADOS).map(p => p.nombre || 'Alguien').join(', '))}">+${resto}</div>` : '');
+    return `<div class="avatar-mini" style="background:${color.avatar}" title="${esc(descripcion(p))}">${esc(iniciales(p.nombre))}</div>`;
+  }).join('') + (resto > 0 ? `<div class="avatar-mini mas" title="${esc(gente.slice(MAX_AVATARES_CONECTADOS).map(descripcion).join('\n'))}">+${resto}</div>` : '');
 }
 
 // Vuelve a calcular desde cero, cada vez, qué campos deben verse marcados — más simple y más
@@ -1881,6 +2000,15 @@ function editandoUnCampoAhora() {
   const el = document.activeElement;
   if (!el) return false;
   return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable === true;
+}
+
+// Cómo se lee el valor de un campo editable: los marcados data-numerico van como número y los
+// data-porcentaje se guardan como fracción (18% → 0.18). Vive aparte porque lo necesitan dos
+// lugares — el tecleo normal y la restauración después de un repintado — y tienen que coincidir.
+function valorDeCampoDesdeInput(el) {
+  if (el.dataset.numerico !== undefined) return numero(el.value);
+  if (el.dataset.porcentaje !== undefined) return numero(el.value) / 100;
+  return el.value;
 }
 
 // Con Realtime conectado, la resincronización es solo una red de seguridad y puede ir tranquila. Si
@@ -1963,13 +2091,6 @@ function avisarCambiosALasOtrasSesiones() {
 async function resincronizar(motivo) {
   if (!state || !ui.usuarioActual) return;    // todavía en el login: no hay nada que resincronizar
   if (_resincronizando || _guardando) return; // no atravesarse a algo que ya está en vuelo
-  // Si alguien está escribiendo, se deja para la próxima oportunidad: cargar() reemplaza state
-  // entero, y repintar encima le borraría el campo a medio llenar. OJO: se pregunta por un campo
-  // EDITABLE enfocado, no por "algo enfocado" — document.activeElement se queda apuntando al último
-  // botón que se haya pulsado (abrir un modal, cambiar de pestaña dentro de la app), así que la
-  // primera versión de esto se saltaba la resincronización para siempre después de cualquier clic,
-  // y los cambios de los demás "nunca salían". Un botón enfocado no es alguien escribiendo.
-  if (editandoUnCampoAhora()) return;
   _resincronizando = true;
   try {
     await guardar(); // primero lo propio que estuviera pendiente, para no perderlo al recargar
@@ -1980,8 +2101,13 @@ async function resincronizar(motivo) {
     // Lo normal es que no haya cambiado nada (Realtime ya venía haciendo su trabajo): en ese caso
     // no se repinta, para que la pantalla no se reconstruya sola cada tanto sin ninguna razón.
     if (JSON.stringify(_ultimoEstadoSincronizado) === antes) return;
-    renderVistaActual();
-    if (modalPersonalEstaPintado()) renderModalPersonal();
+    // Se repinta aunque alguien esté escribiendo: el cursor, su posición y el texto sin guardar se
+    // devuelven a su sitio. Antes acá se cortaba todo si había un campo enfocado, y por eso un
+    // cambio ajeno en ese mismo campo no aparecía hasta recargar la página.
+    repintarConservandoElCursor(() => {
+      renderVistaActual();
+      if (modalPersonalEstaPintado()) renderModalPersonal();
+    });
     aplicarPresenciaVisible(); // el repintado se lleva las marcas de presencia: volver a ponerlas
   } catch (e) {
     console.error('No se pudo resincronizar (' + motivo + '):', e);
@@ -2100,7 +2226,7 @@ function crearCanalPresencia() {
     const estado = _canalPresencia.presenceState();
     _presenciaRemota = Object.values(estado).flat()
       .filter(p => p.userId && (!ui.usuarioActual || p.userId !== ui.usuarioActual.id))
-      .map(p => ({ userId: p.userId, nombre: p.nombre, campo: p.campo }));
+      .map(p => ({ userId: p.userId, nombre: p.nombre, campo: p.campo, ubicacion: p.ubicacion, ambitoUbicacion: p.ambitoUbicacion }));
     aplicarPresenciaVisible();
     renderUsuariosConectados();
   });
@@ -2850,6 +2976,9 @@ function mostrarVista(nombre, params) {
     }));
   } catch (e) { /* almacenamiento no disponible: no pasa nada, solo no se recuerda la vista */ }
   renderVistaActual();
+  // Cambiar de pantalla también cambia dónde estoy para los demás: se reanuncia con el mismo
+  // mecanismo agrupado que usa el cambio de campo (no manda nada extra, solo actualiza lo que ya viaja).
+  enviarPresenciaAgrupado();
 }
 // Repinta la pantalla en la que ya se está, sin navegar: lo mismo que hace el final de
 // mostrarVista(), pero sin volver a subir el scroll ni reescribir la última vista recordada — para
@@ -3417,7 +3546,7 @@ function campoPorcentaje(entidad, id, campo, etiqueta, valorDecimal) {
    15. RENDER — CATÁLOGO
    ============================================================ */
 // Filas de catálogo, cada una en su propia función (antes escritas en línea dentro de
-// renderCatalogo()) — así Realtime puede reconstruir UNA fila puntual con reemplazarFilaSiNoEnfocada()
+// renderCatalogo()) — así Realtime puede reconstruir UNA fila puntual con reemplazarFilaConservandoElCursor()
 // sin duplicar la plantilla, igual que ya existe renderItemRow() para los ítems de un presupuesto.
 function renderFilaCatalogoServicio(c) {
   return `
@@ -4903,9 +5032,11 @@ document.body.addEventListener('input', e => {
   const campo = el.dataset.campo;
   if (!entidad || !campo) return;
   const id = el.dataset.id;
-  const valor = el.dataset.numerico !== undefined ? numero(el.value)
-    : el.dataset.porcentaje !== undefined ? numero(el.value) / 100
-    : el.value;
+  const valor = valorDeCampoDesdeInput(el);
+  // Marca de "acá hay texto mío todavía sin guardar": si mientras tanto llega un cambio de otra
+  // persona en este mismo campo, el repintado le devuelve lo que esta persona venía escribiendo en
+  // vez de pisárselo (ver repintarConservandoElCursor). Se limpia cuando el guardado confirma.
+  el._editadoPorMi = true;
   aplicarCampo(entidad, id, campo, valor);
   marcarGuardando();
 
