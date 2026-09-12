@@ -522,7 +522,12 @@ body.mostrando-app #contenedor-app{ display:contents; }
 
 /* Burbujas de aviso: entran deslizándose por la esquina inferior derecha y se van solas. */
 .avisos-cambios{
-  position:fixed; right:18px; bottom:18px; z-index:90;
+  /* Por encima de TODO lo de la app, sin importar la pantalla ni el rol. Las capas del archivo, de
+     abajo hacia arriba: encabezado (20) · modal y diálogos (100) · panel del combobox (200) ·
+     ESTAS BURBUJAS (300) · video de intro (1000, cubre la pantalla antes de entrar). Antes estaban
+     en 90, debajo del modal: cuando llegaba un aviso con la ventana de mano de obra abierta, salía
+     por detrás y encima se veía difuminada, porque el modal difumina lo que tiene atrás. */
+  position:fixed; right:18px; bottom:18px; z-index:300;
   display:flex; flex-direction:column; gap:8px; align-items:flex-end;
   pointer-events:none; /* no deben estorbar clics en la app; cada burbuja sí los recibe */
 }
@@ -1402,8 +1407,13 @@ window.addEventListener('beforeunload', guardar);
 // haber congelado la pestaña (o cerrado su conexión) y en ese rato los cambios de los demás se
 // perdieron sin aviso — es el momento exacto en que uno vuelve a mirar la pantalla y espera verla al día.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') guardar();
-  else resincronizar('volver a la pestaña');
+  if (document.visibilityState === 'hidden') { guardar(); return; }
+  resincronizar('volver a la pestaña');
+  // Volver a anunciar la posición y revisar los canales: mientras la pestaña estuvo en segundo plano
+  // el navegador pudo haberla congelado y matado sus conexiones, y es justo la pestaña que uno
+  // acaba de dejar (la del otro rol) la que se quedaba muda para los demás.
+  enviarPresenciaAhora();
+  revisarEstadoRealDelCanal();
 });
 
 /* ---------- Realtime: sincronización en vivo ----------
@@ -1726,15 +1736,31 @@ function campoIdentidad(el) {
 }
 
 let _presenciaRemota = []; // [{ userId, nombre, campo }] — nunca incluye la propia presencia
-function transmitirPresencia(campo) {
+
+/* Dónde estoy yo. Se guarda aparte (`_campoPresenciaPropia`) por dos razones:
+   - Pasar de un campo a otro dispara DOS avisos casi al mismo tiempo: el focusout del que dejo
+     (campo = null) y el focusin del que tomo. Al mandarse los dos por separado podían llegar en
+     orden invertido y dejar mi posición en "ningún campo" — era el "cuando me voy a otro campo no
+     se actualiza bien mi posición". Ahora se guarda la intención y se manda una sola vez, un
+     instante después: un cambio de campo produce un aviso, no dos que se pelean.
+   - Si la conexión se cae y vuelve, el servidor olvida mi presencia. Al reconectar hay que volver a
+     anunciar el campo donde SIGO estando, no un null — si no, mi posición desaparecía de las otras
+     pantallas y no volvía nunca ("se deja de ver la posición, como que se pausa"). */
+let _campoPresenciaPropia = null;
+function enviarPresenciaAhora() {
   if (!_canalPresencia || !ui.usuarioActual) return;
-  _canalPresencia.track({ userId: ui.usuarioActual.id, nombre: ui.usuarioActual.nombre, campo: campo || null });
+  try {
+    _canalPresencia.track({ userId: ui.usuarioActual.id, nombre: ui.usuarioActual.nombre, campo: _campoPresenciaPropia });
+  } catch (e) {
+    console.warn('No se pudo anunciar la posición:', e);
+  }
+}
+const enviarPresenciaAgrupado = debounce(enviarPresenciaAhora, 120);
+function transmitirPresencia(campo) {
+  _campoPresenciaPropia = campo || null;
+  enviarPresenciaAgrupado();
 }
 
-// Quiénes más están conectados en este momento, arriba a la derecha. Muestra solo a los DEMÁS: que
-// uno mismo está conectado ya se sabe, y así el encabezado queda vacío cuando se trabaja solo en vez
-// de mostrar un adorno permanente. Sale de la misma presencia que ya marca los campos ajenos, así
-// que no hace ninguna consulta ni guarda nada: es quién tiene la app abierta ahora mismo.
 /* ---------- La burbuja de aviso ----------
    Entra deslizándose abajo a la derecha, dice quién cambió qué, y se va sola. Dos cosas la hacen
    llevadera en vez de molesta: se AGRUPA por persona y ámbito (quien está escribiendo guarda cada
@@ -1992,6 +2018,11 @@ function revisarEstadoRealDelCanal() {
   // canal que se quedó en 'errored'/'closed' no siempre se recupera por su cuenta, y si nadie lo
   // levanta se queda así el resto de la sesión.
   if (estado === 'errored' || estado === 'closed') reintentarCanalDatos();
+
+  // El canal de presencia se revisa igual. Se vigila aparte porque puede caerse solo él, y cuando
+  // pasa, esta sesión deja de anunciar dónde está y deja de mandar sus avisos sin ninguna señal.
+  const estadoPresencia = _canalPresencia ? _canalPresencia.state : null;
+  if (estadoPresencia === 'errored' || estadoPresencia === 'closed') reintentarCanalPresencia();
 }
 function programarResincronizacion() {
   clearInterval(_intervaloResincronizar);
@@ -2048,32 +2079,7 @@ function iniciarRealtime() {
     reintentarCanalDatos();
   });
 
-  // El de presencia se crea una sola vez y sobrevive a los reintentos del canal de datos (que lo
-  // llaman de nuevo a esta función): son independientes justamente para que un problema en uno no
-  // arrastre al otro, y volver a crearlo dejaría una presencia duplicada por cada reintento.
-  if (!_canalPresencia) {
-    _canalPresencia = sb.channel('presencia-odetta');
-    _canalPresencia.on('presence', { event: 'sync' }, () => {
-      const estado = _canalPresencia.presenceState();
-      _presenciaRemota = Object.values(estado).flat()
-        .filter(p => p.userId && (!ui.usuarioActual || p.userId !== ui.usuarioActual.id))
-        .map(p => ({ userId: p.userId, nombre: p.nombre, campo: p.campo }));
-      aplicarPresenciaVisible();
-      renderUsuariosConectados();
-    });
-    // Aviso directo de una sesión a otra: "acabo de guardar algo, revisa". Va por el canal
-    // compartido como mensaje suelto (broadcast), sin pasar por la base de datos ni por sus
-    // permisos de lectura — y por eso llega igual en los casos donde el aviso normal de la base no
-    // llega, que es justo lo que pasaba al BORRAR un anticipo: agregar y modificar se veían al
-    // instante, pero un borrado tardaba hasta 20 segundos porque solo lo traía el respaldo.
-    _canalPresencia.on('broadcast', { event: 'datos-cambiaron' }, (mensaje) => {
-      const aviso = (mensaje && mensaje.payload) || {};
-      if (aviso.origen === ID_SESION_CANAL) return; // es mi propio aviso volviendo
-      resincronizarPorAviso();
-      recibirAvisoDeCambio(aviso);
-    });
-    _canalPresencia.subscribe(estado => { if (estado === 'SUBSCRIBED') transmitirPresencia(null); });
-  }
+  crearCanalPresencia();
 
   // Autocorrección cada 2s: si algo se volvió a pintar de por medio (una fusión de datos, un
   // guardado propio) y se perdió una marca de presencia, esto la vuelve a poner sin esperar a que
@@ -2082,6 +2088,66 @@ function iniciarRealtime() {
     aplicarPresenciaVisible();
     revisarEstadoRealDelCanal();
   }, 2000);
+}
+
+// El canal de presencia se crea aparte del de datos y sobrevive a los reintentos de aquel (que
+// vuelven a entrar por iniciarRealtime): son independientes para que un problema en uno no arrastre
+// al otro, y volver a crearlo dejaría una presencia duplicada por cada reintento.
+function crearCanalPresencia() {
+  if (_canalPresencia) return;
+  _canalPresencia = sb.channel('presencia-odetta');
+  _canalPresencia.on('presence', { event: 'sync' }, () => {
+    const estado = _canalPresencia.presenceState();
+    _presenciaRemota = Object.values(estado).flat()
+      .filter(p => p.userId && (!ui.usuarioActual || p.userId !== ui.usuarioActual.id))
+      .map(p => ({ userId: p.userId, nombre: p.nombre, campo: p.campo }));
+    aplicarPresenciaVisible();
+    renderUsuariosConectados();
+  });
+  // Aviso directo de una sesión a otra: "acabo de guardar algo, revisa". Va por el canal
+  // compartido como mensaje suelto (broadcast), sin pasar por la base de datos ni por sus
+  // permisos de lectura — y por eso llega igual en los casos donde el aviso normal de la base no
+  // llega, que es justo lo que pasaba al BORRAR un anticipo: agregar y modificar se veían al
+  // instante, pero un borrado tardaba hasta 20 segundos porque solo lo traía el respaldo.
+  _canalPresencia.on('broadcast', { event: 'datos-cambiaron' }, (mensaje) => {
+    const aviso = (mensaje && mensaje.payload) || {};
+    if (aviso.origen === ID_SESION_CANAL) return; // es mi propio aviso volviendo
+    resincronizarPorAviso();
+    recibirAvisoDeCambio(aviso);
+  });
+  _canalPresencia.subscribe(estado => {
+    if (estado === 'SUBSCRIBED') {
+      _esperaReintentoPresencia = 3000;
+      // Al (re)conectar hay que volver a anunciar el campo donde SIGO estando: el servidor no se
+      // acuerda de mi presencia después de una caída.
+      enviarPresenciaAhora();
+      return;
+    }
+    console.warn('Realtime: el canal de presencia reportó "' + estado + '".');
+    reintentarCanalPresencia();
+  });
+}
+
+// Mismo tratamiento que el canal de datos, porque tiene el mismo problema: si se cae y nadie lo
+// levanta, esa sesión deja de anunciar su posición y deja de mandar sus burbujas el resto de la
+// sesión — mientras SÍ sigue recibiendo las de los demás. Eso era justo lo que se veía como "los
+// cambios del supervisor dejan de llegarle al admin, pero los del admin siempre llegan": no es el
+// rol, es que el canal de presencia de esa pestaña (la que estaba en segundo plano) se murió callado.
+let _reintentoPresencia = null;
+let _esperaReintentoPresencia = 3000;
+function reintentarCanalPresencia() {
+  if (_reintentoPresencia) return;
+  _reintentoPresencia = setTimeout(() => {
+    _reintentoPresencia = null;
+    _esperaReintentoPresencia = Math.min(_esperaReintentoPresencia * 2, 60000);
+    try {
+      if (_canalPresencia) sb.removeChannel(_canalPresencia);
+      _canalPresencia = null;
+      crearCanalPresencia();
+    } catch (e) {
+      console.error('No se pudo recrear el canal de presencia:', e);
+    }
+  }, _esperaReintentoPresencia);
 }
 
 // Vuelve a crear el canal de datos desde cero tras un error, con una espera creciente para no
