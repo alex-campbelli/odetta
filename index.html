@@ -87,6 +87,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .save-indicator{ display:flex; align-items:center; gap:7px; font-size:.78rem; color:var(--ink-faint); white-space:nowrap; background:var(--surface-2); padding:6px 12px; border-radius:999px; }
 .save-indicator .dot{ width:7px; height:7px; border-radius:50%; background:var(--accent); flex-shrink:0; box-shadow:0 0 0 3px var(--accent-soft); }
 .save-indicator.is-saving .dot{ background:var(--amber); box-shadow:0 0 0 3px var(--amber-soft); }
+/* Estado de la conexión en vivo con las otras personas conectadas: al lado del de guardado y con el
+   mismo lenguaje visual (punto verde = al instante, ámbar = solo cada pocos segundos). */
+.sync-indicator{ margin-left:8px; }
+.sync-indicator.sync-off .dot{ background:var(--amber); box-shadow:0 0 0 3px var(--amber-soft); }
 
 .app-shell{ display:flex; align-items:flex-start; }
 .app-sidebar{
@@ -123,6 +127,11 @@ main:has([data-view="auditoria"].is-active){ max-width:1400px; }
 [data-view].is-active{ display:block; }
 
 @media screen and (max-width:760px){
+  /* Dos indicadores con texto no caben en un encabezado angosto: el de la conexión en vivo se queda
+     solo con su punto de color (verde/ámbar), y el detalle sigue disponible al dejar el dedo o el
+     mouse encima, porque el title se mantiene. */
+  .sync-indicator{ padding:6px; margin-left:4px; }
+  .sync-indicator #sync-indicator-text{ display:none; }
   .app-shell{ flex-direction:column; }
   .app-sidebar{ position:static; width:100%; height:auto; border-right:none; border-bottom:1px solid var(--line); padding:10px 14px; }
   .app-nav{ flex-direction:row; flex-wrap:wrap; }
@@ -604,6 +613,7 @@ body.mostrando-app #contenedor-app{ display:contents; }
   </div>
   <div class="app-header-spacer"></div>
   <div class="save-indicator" id="save-indicator"><span class="dot"></span><span id="save-indicator-text">Guardado</span></div>
+  <div class="save-indicator sync-indicator" id="sync-indicator"><span class="dot"></span><span id="sync-indicator-text">En vivo</span></div>
 </header>
 
 <div class="app-shell">
@@ -1529,9 +1539,13 @@ function modalPersonalEstaPintado() {
 
 const VISTAS_REALTIME_SOLO_LECTURA = {
   'vista-cliente': { tablas: ['presupuestos', 'capitulos', 'items', 'recursos_apu'], render: () => renderVistaCliente() },
-  'vista-costos-personal': { tablas: ['registros_personal', 'conceptos_personal', 'anticipos_personal'], render: () => renderVistaCostosPersonal() },
-  'listado-clientes': { tablas: ['clientes', 'presupuestos', 'registros_personal'], render: () => renderListadoClientes() },
-  'dashboard': { tablas: ['presupuestos', 'clientes', 'registros_personal'], render: () => renderVistaDashboard() }
+  'vista-costos-personal': { tablas: TABLAS_PERSONAL, render: () => renderVistaCostosPersonal() },
+  // Estas dos muestran saldos de mano de obra (el pendiente por cliente y el total pendiente de
+  // personal), que dependen de los conceptos y los anticipos, no solo del registro: antes escuchaban
+  // únicamente registros_personal, así que un anticipo agregado por otra persona no movía esos
+  // números aunque se estuviera mirando la pantalla en ese momento.
+  'listado-clientes': { tablas: ['clientes', 'presupuestos', ...TABLAS_PERSONAL], render: () => renderListadoClientes() },
+  'dashboard': { tablas: ['presupuestos', 'clientes', ...TABLAS_PERSONAL], render: () => renderVistaDashboard() }
 };
 const CONFIG_CATALOGO_REALTIME = {
   catalogo_materiales: { subvista: 'materiales', mapear: filaAObjetoCatalogoMaterial, renderFila: renderFilaCatalogoMaterial },
@@ -1662,15 +1676,31 @@ function aplicarPresenciaVisible() {
    sobre los demás": no es el rol, es quien tenga la pestaña vieja y siga editando (y el admin es
    quien más edita). Por eso se vuelve a traer todo desde cero al recuperar la conexión, al volver a
    la pestaña, y cada tanto como respaldo. */
-const RESINCRONIZAR_CADA_MS = 30000;
+// ¿El cursor está metido en un campo que se puede escribir justo ahora? Solo eso cuenta como
+// "no me interrumpas"; un botón o un enlace con el foco (lo que queda después de cualquier clic) no.
+function editandoUnCampoAhora() {
+  const el = document.activeElement;
+  if (!el) return false;
+  return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable === true;
+}
+
+// Con Realtime conectado, la resincronización es solo una red de seguridad y puede ir tranquila. Si
+// la conexión en vivo NO está disponible (no habilitada en Supabase, o caída), pasa a ser el único
+// mecanismo de sincronización que queda, así que conviene que vaya bastante más seguido.
+const RESINCRONIZAR_CADA_MS = 8000;
+const RESINCRONIZAR_CONECTADO_CADA_MS = 30000;
 let _resincronizando = false;
 let _intervaloResincronizar = null;
 async function resincronizar(motivo) {
   if (!state || !ui.usuarioActual) return;    // todavía en el login: no hay nada que resincronizar
   if (_resincronizando || _guardando) return; // no atravesarse a algo que ya está en vuelo
   // Si alguien está escribiendo, se deja para la próxima oportunidad: cargar() reemplaza state
-  // entero, y repintar encima le borraría el campo a medio llenar.
-  if (algoEnfocadoDentroDe('contenedor-app')) return;
+  // entero, y repintar encima le borraría el campo a medio llenar. OJO: se pregunta por un campo
+  // EDITABLE enfocado, no por "algo enfocado" — document.activeElement se queda apuntando al último
+  // botón que se haya pulsado (abrir un modal, cambiar de pestaña dentro de la app), así que la
+  // primera versión de esto se saltaba la resincronización para siempre después de cualquier clic,
+  // y los cambios de los demás "nunca salían". Un botón enfocado no es alguien escribiendo.
+  if (editandoUnCampoAhora()) return;
   _resincronizando = true;
   try {
     await guardar(); // primero lo propio que estuviera pendiente, para no perderlo al recargar
@@ -1691,6 +1721,32 @@ async function resincronizar(motivo) {
   }
 }
 
+// Estado de la conexión en vivo, a la vista del usuario. Llevamos varias rondas de "a veces
+// sincroniza y a veces no" sin ninguna forma de saber si el problema era la conexión o los datos:
+// este indicador convierte eso en algo concreto que se puede leer en el momento.
+let _realtimeConectado = false;
+function pintarEstadoSincronizacion() {
+  const ind = document.getElementById('sync-indicator');
+  const txt = document.getElementById('sync-indicator-text');
+  if (!ind || !txt) return;
+  ind.classList.toggle('sync-off', !_realtimeConectado);
+  txt.textContent = _realtimeConectado ? 'En vivo' : 'Sin conexión en vivo';
+  ind.title = _realtimeConectado
+    ? 'Los cambios de otras personas aparecen al instante.'
+    : 'No hay conexión en vivo con el servidor. Los cambios de otras personas igual aparecen, pero cada pocos segundos en vez de al instante.';
+}
+function programarResincronizacion() {
+  clearInterval(_intervaloResincronizar);
+  _intervaloResincronizar = setInterval(() => resincronizar('respaldo periódico'),
+    _realtimeConectado ? RESINCRONIZAR_CONECTADO_CADA_MS : RESINCRONIZAR_CADA_MS);
+}
+function marcarEstadoRealtime(conectado) {
+  if (_realtimeConectado === conectado) return;
+  _realtimeConectado = conectado;
+  programarResincronizacion(); // sin conexión en vivo, el respaldo pasa a ir más seguido
+  pintarEstadoSincronizacion();
+}
+
 let _canalRealtime = null;
 let _intervaloPresencia = null;
 let _yaEstuvoSuscrito = false;
@@ -1708,22 +1764,26 @@ function iniciarRealtime() {
     aplicarPresenciaVisible();
   });
   _canalRealtime.subscribe(estado => {
-    if (estado !== 'SUBSCRIBED') return;
-    transmitirPresencia(null);
-    // La PRIMERA suscripción no necesita resincronizar (continuarConSesion() acaba de cargar todo).
-    // Cualquier siguiente sí: significa que la conexión se cayó y volvió, y nada de lo que pasó
-    // mientras estuvo caída se reenvía.
-    if (_yaEstuvoSuscrito) resincronizar('reconexión de Realtime');
-    _yaEstuvoSuscrito = true;
+    if (estado === 'SUBSCRIBED') {
+      marcarEstadoRealtime(true);
+      transmitirPresencia(null);
+      // La PRIMERA suscripción no necesita resincronizar (continuarConSesion() acaba de cargar
+      // todo). Cualquier siguiente sí: significa que la conexión se cayó y volvió, y nada de lo que
+      // pasó mientras estuvo caída se reenvía.
+      if (_yaEstuvoSuscrito) resincronizar('reconexión de Realtime');
+      _yaEstuvoSuscrito = true;
+      return;
+    }
+    // CHANNEL_ERROR / TIMED_OUT / CLOSED. supabase-js reintenta la conexión por su cuenta; mientras
+    // tanto se dice en pantalla y el respaldo periódico se acelera, en vez de dejar al usuario
+    // adivinando por qué no le aparecen los cambios de los demás.
+    marcarEstadoRealtime(false);
+    console.warn('Realtime: el canal reportó el estado "' + estado + '" — sin sincronización instantánea por ahora.');
   });
   // Autocorrección cada 2s: si algo se volvió a pintar de por medio (una fusión de datos, un
   // guardado propio) y se perdió una marca de presencia, esto la vuelve a poner sin esperar a que
   // alguien más cambie de campo para que llegue un nuevo evento de sincronización.
   _intervaloPresencia = setInterval(aplicarPresenciaVisible, 2000);
-  // Respaldo por si un evento se perdió sin que la conexión se cayera del todo (o se cayó y volvió
-  // sin que el canal lo reportara): cada tanto se comparan los datos contra la base de verdad. No
-  // reemplaza a Realtime —que sigue siendo lo instantáneo—, solo evita quedarse viejo sin saberlo.
-  _intervaloResincronizar = setInterval(() => resincronizar('respaldo periódico'), RESINCRONIZAR_CADA_MS);
 }
 
 /* ============================================================
@@ -4687,6 +4747,10 @@ async function continuarConSesion(session, esLoginFresco) {
   // Si esto falla (Realtime no habilitado, red inestable justo en ese momento), la app entera no
   // debe quedar bloqueada por eso — se sigue sin sincronización en vivo, no sin la app.
   try { iniciarRealtime(); } catch (e) { console.error('No se pudo iniciar Realtime:', e); }
+  // El respaldo periódico se programa SIEMPRE, incluso si Realtime no arrancó — justamente en ese
+  // caso es el único mecanismo de sincronización que queda, así que no puede depender de él.
+  programarResincronizacion();
+  pintarEstadoSincronizacion();
   renderSidebarUsuario();
   document.body.classList.remove('mostrando-login');
   document.body.classList.add('mostrando-app');
