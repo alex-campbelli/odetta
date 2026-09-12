@@ -112,14 +112,21 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .nav-tab svg{ flex-shrink:0; }
 .nav-tab:hover{ background:var(--surface); }
 .nav-tab.is-active{ background:var(--accent-strong); color:#fff; border-color:var(--accent-strong); box-shadow:0 4px 12px -4px rgba(89,111,60,.45); }
-.solo-admin{ display:none; }
-body.es-admin .solo-admin{ display:block; }
+/* Ocultar algo por permisos tiene que ganarle a CUALQUIER estilo del componente, por eso van con
+   !important y escritas como "si no eres X, no lo ves". La versión anterior era `.solo-admin{
+   display:none }`, y la regla del botón de la barra lateral (`.sidebar-usuario .acciones button`,
+   más específica) la pisaba: el engranaje de Configuraciones se le mostraba a todo el mundo, y un
+   operario podía entrar y ver correos, roles y el botón de crear usuarios. La pestaña de Auditoría
+   sí quedaba oculta —su regla tiene la misma especificidad y venía antes—, y por eso el problema
+   pasó desapercibido.
+   Al mostrar NO se fuerza ningún display: así cada elemento conserva el suyo (la pestaña es flex,
+   el botón del engranaje inline-flex) en vez de que un display:block les rompa la alineación. */
+body:not(.es-admin) .solo-admin{ display:none !important; }
 /* Supervisor: pantalla propia y nada más — solo ve su nav-tab (.solo-supervisor aparece), y los
    3 tabs sin restricción de rol (Dashboard/Clientes/Catálogo) se ocultan solo para él. Auditoría/
    Configuraciones ya quedan afuera solas (siguen exigiendo rol==='admin' arriba). */
-.solo-supervisor{ display:none; }
-body.es-supervisor .solo-supervisor{ display:flex; }
-body.es-supervisor .oculto-supervisor{ display:none; }
+body:not(.es-supervisor) .solo-supervisor{ display:none !important; }
+body.es-supervisor .oculto-supervisor{ display:none !important; }
 
 main{ flex:1; min-width:0; max-width:1020px; padding:32px 32px 90px; }
 main:has([data-view="auditoria"].is-active){ max-width:1400px; }
@@ -2988,8 +2995,61 @@ function aplicarCatalogoAItem(itemId, hit) {
 /* ============================================================
    12. ROUTER
    ============================================================ */
+/* Qué pantallas le corresponden a cada rol. Es la única fuente de verdad, y la usan tanto
+   mostrarVista() como restaurarUltimaVista(). Sin sesión (pruebas, arranque) no se restringe nada. */
+function puedeVerVista(nombre) {
+  if (!ui.usuarioActual) return true;
+  const rol = ui.usuarioActual.rol;
+  if (nombre === 'admin' || nombre === 'auditoria') return rol === 'admin';
+  // El supervisor solo tiene su panel y el PDF de un presupuesto.
+  if (rol === 'supervisor') return nombre === 'panel-supervisor' || nombre === 'vista-cliente';
+  return true;
+}
+function vistaDeInicio() {
+  return ui.usuarioActual && ui.usuarioActual.rol === 'supervisor' ? 'panel-supervisor' : 'dashboard';
+}
+
+/* El nav-tab "Clientes" es un "llévame a donde estaba": si dejaste un presupuesto o un cliente
+   abierto y saliste un momento (p.ej. a Catálogo a agregar un material), te devuelve ahí en vez de
+   al listado desde cero.
+   Para que eso funcione bien, lo que cuenta es qué quedó ABIERTO de verdad. Antes los botones de
+   volver no cerraban nada: salías del presupuesto con la flecha, pero su id seguía guardado, y
+   "Clientes" te devolvía al presupuesto una y otra vez aunque ya te hubieras salido. Ahora salir
+   por la flecha sí cierra lo que estabas viendo (ver las acciones volver-a-cliente y
+   salir-al-listado), y entonces "Clientes" lleva al listado, que es lo que uno espera. */
+/* Los botones de volver CIERRAN lo que estabas viendo. Suena obvio, pero no lo hacían: salías del
+   presupuesto con la flecha y su id se quedaba guardado, así que el nav-tab "Clientes" te devolvía
+   a ese presupuesto una y otra vez aunque ya te hubieras salido.
+   Van como funciones con nombre, y no como una flecha dentro del mapa de acciones, para poder
+   probarlas de verdad en vez de solo confiar en que el botón hace lo que dice. */
+function volverAlCliente(clienteId) {
+  ui.presupuestoActivoId = null; // ese presupuesto ya no está abierto
+  if (clienteId) { ui.clienteActivoId = clienteId; mostrarVista('editor-cliente'); }
+  else { mostrarVista('listado-clientes'); }
+}
+function salirAlListado() {
+  ui.presupuestoActivoId = null;
+  ui.clienteActivoId = null;
+  mostrarVista('listado-clientes');
+}
+
+function irAClientesInteligente() {
+  if (ui.presupuestoActivoId && state.presupuestos.find(p => p.id === ui.presupuestoActivoId)) {
+    mostrarVista('editor-presupuesto');
+  } else if (ui.clienteActivoId && encontrarCliente(ui.clienteActivoId)) {
+    mostrarVista('editor-cliente');
+  } else {
+    mostrarVista('listado-clientes');
+  }
+}
+
 function mostrarVista(nombre, params) {
   params = params || {};
+  // Esconder un botón NO es un permiso: si por lo que sea se llega hasta acá con una pantalla que
+  // no le corresponde a este rol (un estilo que pisó al que la ocultaba —que es justo lo que
+  // pasaba con el engranaje de Configuraciones—, una vista recordada de cuando se tenía otro rol,
+  // o un clic provocado a mano), se corta aquí y se manda a su pantalla de inicio.
+  if (!puedeVerVista(nombre)) nombre = vistaDeInicio();
   ui.vista = nombre;
   if (nombre === 'vista-cliente' && params.presupuestoId) ui.vistaClienteId = params.presupuestoId;
   if (nombre === 'vista-costos-personal') ui.vistaCostosPersonalRegistroId = params.registroId || null;
@@ -3062,19 +3122,6 @@ function restaurarUltimaVista() {
   mostrarVista(uv.vista);
 }
 
-// El nav-tab "Clientes" del costado, a diferencia del botón "← Listado" de adentro del editor
-// (que sí lleva siempre al listado completo a propósito), es más un "llévame a donde estaba" —
-// si hay un presupuesto o cliente activo (p.ej. saliste un momento a Catálogo a agregar un
-// material que faltaba), vuelve ahí directo en vez de mandar siempre al listado desde cero.
-function irAClientesInteligente() {
-  if (ui.presupuestoActivoId && state.presupuestos.find(p => p.id === ui.presupuestoActivoId)) {
-    mostrarVista('editor-presupuesto');
-  } else if (ui.clienteActivoId && encontrarCliente(ui.clienteActivoId)) {
-    mostrarVista('editor-cliente');
-  } else {
-    mostrarVista('listado-clientes');
-  }
-}
 
 /* ============================================================
    13. UTILIDAD — PRESUPUESTO ↔ CLIENTE
@@ -3947,7 +3994,7 @@ function renderEditorCliente() {
   cont.innerHTML = `
     <div class="editor-topbar">
       <div class="info"><h1>${esc(c.nombre) || 'Cliente'}</h1></div>
-      <button class="btn" data-action="ir-vista" data-vista="listado-clientes">← Listado</button>
+      <button class="btn" data-action="salir-al-listado">← Listado</button>
     </div>
 
     <div class="editor-section">
@@ -5018,7 +5065,8 @@ document.body.addEventListener('click', e => {
     // Supervisor nunca debe caer en el editor interactivo (RLS ya se lo bloquearía, pero además
     // ahí vería precios/edición que su rol no debe ver) — vuelve a su propia pantalla en cambio.
     'volver-editor': () => mostrarVista(ui.usuarioActual.rol === 'supervisor' ? 'panel-supervisor' : 'editor-presupuesto'),
-    'volver-a-cliente': () => { if (id) { ui.clienteActivoId = id; mostrarVista('editor-cliente'); } else { mostrarVista('listado-clientes'); } },
+    'volver-a-cliente': () => volverAlCliente(id),
+    'salir-al-listado': () => salirAlListado(),
     'imprimir': () => window.print(),
     'crear-capitulo': () => crearCapitulo(),
     'capitulos-sugeridos': () => usarCapitulosSugeridos(),
