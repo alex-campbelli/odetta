@@ -613,7 +613,12 @@ body.mostrando-app #contenedor-app{ display:contents; }
   .doc-sheet table{ font-size:.8rem; }
   .doc-sheet thead th{ padding:5px 6px; white-space:normal; }
   .doc-sheet tbody td{ padding:4px 6px; }
-  .doc-closing{ break-inside:avoid; }
+  /* El cuadro de totales no se parte nunca: antes las filas (Subtotal, A.I.U., IVA) se quedaban en
+     una hoja y el Total saltaba solo a la siguiente, separado del resto. */
+  .doc-summary{ break-inside:avoid; }
+  /* Y el pie (firma + condiciones) se queda pegado a ese cuadro: si no caben juntos en lo que
+     queda de hoja, pasan los dos juntos a la siguiente, que es lo que uno espera ver al final. */
+  .doc-closing{ break-inside:avoid; break-before:avoid; }
   .doc-closing-row{ display:flex; flex-direction:row-reverse; justify-content:space-between; align-items:flex-start; gap:28px; }
   .doc-conditions{ margin-top:0; font-size:.74rem; flex:1; }
   .doc-sign{ margin-top:0; padding-top:0; border-top:none; font-size:.76rem; flex:1; }
