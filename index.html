@@ -506,6 +506,64 @@ body.mostrando-app #contenedor-app{ display:contents; }
   display:flex; align-items:center; justify-content:center; font-size:.76rem; font-weight:700; flex-shrink:0;
 }
 .avatar-mini-lg{ width:72px; height:72px; font-size:1.3rem; }
+/* Quiénes más están conectados ahora mismo, arriba a la derecha. Los círculos se solapan un poco
+   (como en un documento compartido) para ocupar poco y leerse como un grupo; el borde del color del
+   fondo del encabezado es lo que los separa visualmente al solaparse. Cada uno lleva el mismo color
+   que ya identifica a esa persona en los campos donde tiene el cursor. */
+.usuarios-conectados{ display:flex; align-items:center; }
+.usuarios-conectados .avatar-mini{
+  width:27px; height:27px; font-size:.62rem; border:2px solid var(--surface);
+  margin-left:-7px; cursor:default;
+}
+.usuarios-conectados .avatar-mini:first-child{ margin-left:0; }
+.usuarios-conectados .mas{
+  background:var(--surface-2); color:var(--ink-soft); font-size:.6rem;
+}
+
+/* Burbujas de aviso: entran deslizándose por la esquina inferior derecha y se van solas. */
+.avisos-cambios{
+  position:fixed; right:18px; bottom:18px; z-index:90;
+  display:flex; flex-direction:column; gap:8px; align-items:flex-end;
+  pointer-events:none; /* no deben estorbar clics en la app; cada burbuja sí los recibe */
+}
+.burbuja-cambio{
+  pointer-events:auto; cursor:pointer;
+  display:flex; align-items:center; gap:9px;
+  max-width:330px; padding:10px 14px;
+  background:var(--surface); color:var(--ink); font-size:.8rem; line-height:1.3;
+  border:1px solid var(--line); border-left:3px solid var(--color-burbuja, var(--accent));
+  border-radius:10px; box-shadow:0 6px 20px rgba(43,51,40,.16);
+  /* La entrada va con @keyframes y no con una transición: una transición sobre un elemento que
+     acaba de insertarse no anima (el navegador lo pinta ya en su estado final), y resolverlo
+     necesitaría esperar un frame antes de cambiarle la clase. Con keyframes anima sola al aparecer.
+     SIN fill-mode a propósito: el estado normal de la burbuja es "visible y en su sitio", y la
+     animación es solo el adorno de llegada. Con `both` el estado de partida (fuera de pantalla) se
+     quedaba aplicado si la animación no llegaba a correr, y la burbuja no se veía nunca. */
+  animation:burbuja-entra .28s cubic-bezier(.2,.8,.2,1);
+}
+/* Entra corrida solo 24px, no un 120% que la saque de la pantalla: si la animación no llega a
+   avanzar (pasa con una pestaña en segundo plano, y se comprobó en vivo que puede quedarse
+   congelada en su primer fotograma), la burbuja igual se ve y se lee. El deslizamiento es un
+   adorno; que el aviso se vea no puede depender de él. */
+@keyframes burbuja-entra{
+  from{ transform:translateX(24px); opacity:0; }
+  to{ transform:translateX(0); opacity:1; }
+}
+.burbuja-cambio.saliendo{
+  animation:none; transform:translateX(120%); opacity:0;
+  transition:transform .28s cubic-bezier(.2,.8,.2,1), opacity .28s ease;
+}
+.burbuja-cambio .punto{ width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.burbuja-cambio .texto{ min-width:0; }
+.burbuja-cambio b{ font-weight:600; }
+@media screen and (max-width:760px){
+  .avisos-cambios{ right:10px; left:10px; bottom:10px; align-items:stretch; }
+  .burbuja-cambio{ max-width:none; }
+}
+@media (prefers-reduced-motion: reduce){
+  .burbuja-cambio{ animation:none; }
+  .burbuja-cambio.saliendo{ transform:none; transition:opacity .2s ease; }
+}
 .field-avatar-editor{ display:flex; align-items:center; gap:14px; margin-bottom:18px; }
 .sidebar-usuario .info{ flex:1; min-width:0; display:flex; flex-direction:column; }
 .sidebar-usuario .info .nombre{ font-size:.82rem; font-weight:600; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -612,6 +670,7 @@ body.mostrando-app #contenedor-app{ display:contents; }
     <div class="word">Odetta<small>Presupuestos</small></div>
   </div>
   <div class="app-header-spacer"></div>
+  <div class="usuarios-conectados" id="usuarios-conectados"></div>
   <div class="save-indicator" id="save-indicator"><span class="dot"></span><span id="save-indicator-text">Guardado</span></div>
   <div class="save-indicator sync-indicator" id="sync-indicator"><span class="dot"></span><span id="sync-indicator-text">En vivo</span></div>
 </header>
@@ -1108,18 +1167,24 @@ function mostrarErrorDeArranque(mensaje) {
   `;
 }
 async function cargar() {
+  // Todas las consultas piden un orden explícito. Sin ORDER BY, Postgres devuelve las filas en el
+  // orden que le resulte más cómodo, y ese orden CAMBIA cuando una fila se modifica — así que las
+  // listas se reacomodaban solas en cada lectura. Antes casi no se notaba (solo al recargar la
+  // página); ahora que la app se resincroniza cada pocos segundos, se veía como filas saltando de
+  // lugar. El id lleva dentro el momento de creación, así que ordenar por id es "en el orden en que
+  // se fueron agregando"; los anticipos van por fecha, del más viejo al más nuevo.
   const consultas = await Promise.all([
-    sb.from('clientes').select('*'),
-    sb.from('registros_personal').select('*'),
-    sb.from('conceptos_personal').select('*'),
-    sb.from('anticipos_personal').select('*'),
-    sb.from('presupuestos').select('*'),
+    sb.from('clientes').select('*').order('id'),
+    sb.from('registros_personal').select('*').order('id'),
+    sb.from('conceptos_personal').select('*').order('id'),
+    sb.from('anticipos_personal').select('*').order('fecha').order('id'),
+    sb.from('presupuestos').select('*').order('id'),
     sb.from('capitulos').select('*').order('orden'),
     sb.from('items').select('*').order('orden'),
-    sb.from('recursos_apu').select('*'),
-    sb.from('catalogo_materiales').select('*'),
-    sb.from('catalogo_servicios').select('*'),
-    sb.from('catalogo_mano_obra').select('*'),
+    sb.from('recursos_apu').select('*').order('id'),
+    sb.from('catalogo_materiales').select('*').order('id'),
+    sb.from('catalogo_servicios').select('*').order('id'),
+    sb.from('catalogo_mano_obra').select('*').order('id'),
     sb.from('empresa_config').select('*').eq('id', 1).maybeSingle()
   ]);
   const [rClientes, rRegistros, rConceptos, rAnticipos, rPresupuestos, rCapitulos, rItems, rRecursos, rCatMateriales, rCatServicios, rCatManoObra, rEmpresa] = consultas;
@@ -1225,9 +1290,12 @@ function esEcoDeEscrituraPropia(id) {
 }
 
 // Se pone en true en cuanto este guardado escribe algo de verdad, para avisarles después a las
-// otras sesiones que hay novedades (ver avisarCambiosALasOtrasSesiones).
+// otras sesiones que hay novedades (ver avisarCambiosALasOtrasSesiones). `_tablasCambiadas` guarda
+// en qué tablas se escribió, que es lo que después decide qué dice el aviso y a quién le llega.
 let _huboEscrituras = false;
+let _tablasCambiadas = new Set();
 async function aplicarDiff(tabla, diff) {
+  if (diff.borrar.length || diff.cambios.length) _tablasCambiadas.add(tabla);
   if (diff.borrar.length) {
     anotarEscrituraPropia(diff.borrar);
     _huboEscrituras = true;
@@ -1285,6 +1353,7 @@ async function guardar() {
       if (JSON.stringify(enviado.empresa) !== JSON.stringify(anterior.empresa)) {
         anotarEscrituraPropia([1]); // empresa_config es siempre la fila id=1
         _huboEscrituras = true;
+        _tablasCambiadas.add('empresa_config');
         const { error } = await sb.from('empresa_config').update({
           consecutivo_presupuesto: enviado.empresa.consecutivoPresupuesto,
           aiu_administracion_defecto: numero(enviado.empresa.aiuDefecto.administracion),
@@ -1644,7 +1713,9 @@ function colorParaUsuario(userId) {
   const texto = String(userId);
   for (let i = 0; i < texto.length; i++) hash = (hash * 31 + texto.charCodeAt(i)) | 0;
   const hue = Math.abs(hash) % 360;
-  return { borde: `hsl(${hue} 55% 50%)`, fondo: `hsl(${hue} 70% 94%)` };
+  // `avatar` es el mismo tono pero bastante más oscuro, porque ahí encima van las iniciales en
+  // blanco: con la luminosidad del borde (50%) un tono amarillo dejaría el texto casi ilegible.
+  return { borde: `hsl(${hue} 55% 50%)`, fondo: `hsl(${hue} 70% 94%)`, avatar: `hsl(${hue} 45% 34%)` };
 }
 
 // La misma tripleta entidad+id+campo que ya identifica un campo editable para aplicarCampo() — se
@@ -1658,6 +1729,90 @@ let _presenciaRemota = []; // [{ userId, nombre, campo }] — nunca incluye la p
 function transmitirPresencia(campo) {
   if (!_canalPresencia || !ui.usuarioActual) return;
   _canalPresencia.track({ userId: ui.usuarioActual.id, nombre: ui.usuarioActual.nombre, campo: campo || null });
+}
+
+// Quiénes más están conectados en este momento, arriba a la derecha. Muestra solo a los DEMÁS: que
+// uno mismo está conectado ya se sabe, y así el encabezado queda vacío cuando se trabaja solo en vez
+// de mostrar un adorno permanente. Sale de la misma presencia que ya marca los campos ajenos, así
+// que no hace ninguna consulta ni guarda nada: es quién tiene la app abierta ahora mismo.
+/* ---------- La burbuja de aviso ----------
+   Entra deslizándose abajo a la derecha, dice quién cambió qué, y se va sola. Dos cosas la hacen
+   llevadera en vez de molesta: se AGRUPA por persona y ámbito (quien está escribiendo guarda cada
+   medio segundo, así que sin agrupar saldría un aviso por tecleo — en cambio se reutiliza la misma
+   burbuja y se le reinicia el tiempo), y nunca muestra valores, solo qué tipo de cosa cambió y dónde. */
+const BURBUJA_DURACION_MS = 6000;
+const MAX_BURBUJAS = 3;
+function contenedorBurbujas() {
+  let cont = document.getElementById('avisos-cambios');
+  if (!cont) {
+    cont = document.createElement('div');
+    cont.id = 'avisos-cambios';
+    cont.className = 'avisos-cambios';
+    document.body.appendChild(cont);
+  }
+  return cont;
+}
+function cerrarBurbuja(burbuja) {
+  if (!burbuja) return;
+  clearTimeout(burbuja._temporizador);
+  burbuja.classList.add('saliendo');
+  // se quita del DOM después de la animación de salida; si el navegador no la corre, igual se va
+  burbuja._temporizadorSalida = setTimeout(() => burbuja.remove(), 300);
+}
+function mostrarBurbujaCambio(aviso) {
+  const cont = contenedorBurbujas();
+  if (!cont) return null;
+  const clave = (aviso.autorId || aviso.autor || '?') + '|' + aviso.ambito;
+  const texto = `<b>${esc(aviso.autor || 'Alguien')}</b> ${esc(TEXTO_POR_AMBITO[aviso.ambito] || 'hizo cambios')}`
+    + (aviso.cliente ? ` en ${esc(aviso.cliente)}` : '');
+
+  // ¿ya hay una burbuja de esta misma persona sobre lo mismo? se reutiliza, no se apila otra
+  let burbuja = cont.querySelector(`[data-clave="${clave}"]`);
+  if (!burbuja) {
+    burbuja = document.createElement('div');
+    burbuja.className = 'burbuja-cambio';
+    burbuja.dataset.clave = clave;
+    burbuja.dataset.action = 'cerrar-burbuja';
+    cont.appendChild(burbuja);
+    // Más de unas pocas a la vez tapan la pantalla: se va la más vieja. Solo cuentan las que están
+    // realmente en pantalla — una que ya se está yendo sigue en el DOM unos milisegundos mientras
+    // corre su animación de salida, y si se contara, se cerraría dos veces la misma y quedarían más
+    // de las permitidas a la vista.
+    const vivas = [...cont.querySelectorAll('.burbuja-cambio')].filter(b => !b.classList.contains('saliendo'));
+    if (vivas.length > MAX_BURBUJAS) cerrarBurbuja(vivas[0]);
+  }
+  const color = colorParaUsuario(aviso.autorId || aviso.autor || '?');
+  burbuja.innerHTML = `<span class="punto" style="background:${color.avatar}"></span><span class="texto">${texto}</span>`;
+  burbuja.style.setProperty('--color-burbuja', color.avatar);
+  clearTimeout(burbuja._temporizador);
+  burbuja._temporizador = setTimeout(() => cerrarBurbuja(burbuja), BURBUJA_DURACION_MS);
+  return burbuja;
+}
+// Punto de entrada de un aviso que llegó de otra sesión: decide si a este rol le corresponde verlo.
+function recibirAvisoDeCambio(aviso) {
+  if (!aviso || !aviso.ambito || !ui.usuarioActual) return false;
+  if (!puedeVerAmbito(ui.usuarioActual.rol, aviso.ambito)) return false;
+  mostrarBurbujaCambio(aviso);
+  return true;
+}
+
+const MAX_AVATARES_CONECTADOS = 4;
+function renderUsuariosConectados() {
+  const cont = document.getElementById('usuarios-conectados');
+  if (!cont) return;
+  // Una misma persona puede tener dos pestañas abiertas: se cuenta una sola vez.
+  const porUsuario = new Map();
+  _presenciaRemota.forEach(p => { if (!porUsuario.has(p.userId)) porUsuario.set(p.userId, p); });
+  const gente = [...porUsuario.values()];
+  if (gente.length === 0) { cont.innerHTML = ''; return; }
+
+  const visibles = gente.slice(0, MAX_AVATARES_CONECTADOS);
+  const resto = gente.length - visibles.length;
+  cont.innerHTML = visibles.map(p => {
+    const color = colorParaUsuario(p.userId);
+    const donde = p.campo ? ' — está editando algo ahora mismo' : '';
+    return `<div class="avatar-mini" style="background:${color.avatar}" title="${esc(p.nombre || 'Alguien')}${donde} · conectado">${esc(iniciales(p.nombre))}</div>`;
+  }).join('') + (resto > 0 ? `<div class="avatar-mini mas" title="${esc(gente.slice(MAX_AVATARES_CONECTADOS).map(p => p.nombre || 'Alguien').join(', '))}">+${resto}</div>` : '');
 }
 
 // Vuelve a calcular desde cero, cada vez, qué campos deben verse marcados — más simple y más
@@ -1715,13 +1870,66 @@ let _intervaloResincronizar = null;
 // una recarga completa acá. 1,2s sigue siendo instantáneo para quien mira, y acota el trabajo.
 const resincronizarPorAviso = debounce(() => resincronizar('aviso de otra sesión'), 1200);
 
-// Le dice a las demás sesiones abiertas que acaban de pasar cosas. Va por el canal compartido de
-// presencia y no toca la base de datos: es solo un empujón para que no tengan que esperar al
-// respaldo periódico. Si falla (canal caído), no pasa nada: el respaldo sigue estando.
+/* ---------- Qué se avisa, y a quién ----------
+   Cada tabla pertenece a un "ámbito", y cada rol solo recibe avisos de los ámbitos que le
+   corresponden: mano de obra la ven todos; presupuestos, clientes y catálogo no le llegan al
+   supervisor (su pantalla es solo mano de obra); la configuración de empresa solo al admin.
+   IMPORTANTE: este filtro se aplica en el navegador que RECIBE, no en el servidor — el aviso viaja
+   por el canal compartido, que no pasa por los permisos de la base de datos. Por eso el aviso dice
+   QUÉ tipo de cosa cambió y en qué cliente, pero nunca valores (ni precios, ni montos): así, aunque
+   el filtro sea del lado de quien recibe, no hay ningún dato sensible viajando. */
+const AMBITO_POR_TABLA = {
+  registros_personal: 'mano-de-obra', conceptos_personal: 'mano-de-obra', anticipos_personal: 'mano-de-obra',
+  clientes: 'clientes',
+  presupuestos: 'presupuestos', capitulos: 'presupuestos', items: 'presupuestos', recursos_apu: 'presupuestos',
+  catalogo_materiales: 'catalogo', catalogo_servicios: 'catalogo', catalogo_mano_obra: 'catalogo',
+  empresa_config: 'configuracion'
+};
+const AMBITOS_POR_ROL = {
+  admin: ['mano-de-obra', 'clientes', 'presupuestos', 'catalogo', 'configuracion'],
+  operario: ['mano-de-obra', 'clientes', 'presupuestos', 'catalogo'],
+  usuario: ['mano-de-obra', 'clientes', 'presupuestos', 'catalogo'],
+  supervisor: ['mano-de-obra']
+};
+const TEXTO_POR_AMBITO = {
+  'mano-de-obra': 'actualizó mano de obra',
+  'clientes': 'actualizó datos de un cliente',
+  'presupuestos': 'actualizó un presupuesto',
+  'catalogo': 'actualizó el catálogo',
+  'configuracion': 'cambió la configuración de la empresa'
+};
+function ambitoDeLoCambiado(tablas) {
+  // Si un mismo guardado tocó varias cosas, se resume por la más específica del trabajo en curso:
+  // mano de obra primero, porque es la que comparten todos los roles.
+  const ambitos = [...tablas].map(t => AMBITO_POR_TABLA[t]).filter(Boolean);
+  return ['mano-de-obra', 'presupuestos', 'clientes', 'catalogo', 'configuracion'].find(a => ambitos.includes(a)) || null;
+}
+function puedeVerAmbito(rol, ambito) {
+  const permitidos = AMBITOS_POR_ROL[rol] || AMBITOS_POR_ROL.operario;
+  return permitidos.includes(ambito);
+}
+
+// Le dice a las demás sesiones abiertas que acaban de pasar cosas, y qué tipo de cosas. Va por el
+// canal compartido de presencia y no toca la base de datos: es un empujón para que no tengan que
+// esperar al respaldo periódico, y a la vez lo que alimenta la burbuja de aviso. Si falla (canal
+// caído), no pasa nada: el respaldo sigue estando.
 function avisarCambiosALasOtrasSesiones() {
+  const tablas = [..._tablasCambiadas];
+  _tablasCambiadas = new Set();
   if (!_canalPresencia) return;
+  const ambito = ambitoDeLoCambiado(tablas);
+  const cliente = (ambito === 'mano-de-obra' || ambito === 'presupuestos' || ambito === 'clientes') ? clienteActivo() : null;
   try {
-    _canalPresencia.send({ type: 'broadcast', event: 'datos-cambiaron', payload: { origen: ID_SESION_CANAL } });
+    _canalPresencia.send({
+      type: 'broadcast', event: 'datos-cambiaron',
+      payload: {
+        origen: ID_SESION_CANAL,
+        autor: ui.usuarioActual ? ui.usuarioActual.nombre : '',
+        autorId: ui.usuarioActual ? ui.usuarioActual.id : '',
+        ambito,
+        cliente: cliente ? cliente.nombre : ''
+      }
+    });
   } catch (e) {
     console.warn('No se pudo avisar a las otras sesiones (seguirán viendo el cambio por el respaldo periódico):', e);
   }
@@ -1851,6 +2059,7 @@ function iniciarRealtime() {
         .filter(p => p.userId && (!ui.usuarioActual || p.userId !== ui.usuarioActual.id))
         .map(p => ({ userId: p.userId, nombre: p.nombre, campo: p.campo }));
       aplicarPresenciaVisible();
+      renderUsuariosConectados();
     });
     // Aviso directo de una sesión a otra: "acabo de guardar algo, revisa". Va por el canal
     // compartido como mensaje suelto (broadcast), sin pasar por la base de datos ni por sus
@@ -1858,9 +2067,10 @@ function iniciarRealtime() {
     // llega, que es justo lo que pasaba al BORRAR un anticipo: agregar y modificar se veían al
     // instante, pero un borrado tardaba hasta 20 segundos porque solo lo traía el respaldo.
     _canalPresencia.on('broadcast', { event: 'datos-cambiaron' }, (mensaje) => {
-      const origen = mensaje && mensaje.payload && mensaje.payload.origen;
-      if (origen === ID_SESION_CANAL) return; // es mi propio aviso volviendo
+      const aviso = (mensaje && mensaje.payload) || {};
+      if (aviso.origen === ID_SESION_CANAL) return; // es mi propio aviso volviendo
       resincronizarPorAviso();
+      recibirAvisoDeCambio(aviso);
     });
     _canalPresencia.subscribe(estado => { if (estado === 'SUBSCRIBED') transmitirPresencia(null); });
   }
@@ -1940,7 +2150,25 @@ function calcularConceptoPersonal(cp) {
   cp._total = redondear(numero(cp.cantidad) * numero(cp.precioUnitario));
   return cp._total;
 }
+// Los anticipos van siempre del más viejo al más nuevo por fecha. Es necesario ordenarlos a mano
+// (no alcanza con pedirlos ordenados a la base de datos) porque además llegan por otros caminos: un
+// anticipo que agrega otra persona entra por el aviso en vivo y se pega al final de la lista, y uno
+// recién creado acá tampoco sabe dónde va. Sin esto, las filas se reacomodaban solas cada vez que la
+// lista se volvía a leer — muy visible ahora que la app se resincroniza cada pocos segundos.
+// Un anticipo sin fecha todavía va al final, y entre dos de la misma fecha manda el orden en que se
+// crearon (el id lo lleva adentro), para que el orden sea siempre el mismo y no baile.
+function ordenarAnticipos(anticipos) {
+  return anticipos.sort((a, b) => {
+    const fa = a.fecha || '9999-12-31', fb = b.fecha || '9999-12-31';
+    if (fa !== fb) return fa < fb ? -1 : 1;
+    return String(a.id) < String(b.id) ? -1 : 1;
+  });
+}
 function calcularRegistroPersonal(r) {
+  ordenarAnticipos(r.anticipos);
+  // Los conceptos no tienen fecha: se quedan en el orden en que se fueron agregando, que es estable
+  // y es el que la persona espera. Antes también se reacomodaban entre ellos.
+  r.conceptos.sort((a, b) => String(a.id) < String(b.id) ? -1 : 1);
   const subtotal = redondear(r.conceptos.reduce((s, cp) => s + calcularConceptoPersonal(cp), 0));
   const retencion = redondear(subtotal * numero(r.retencionPorcentaje));
   const totalXPagar = subtotal - retencion;
@@ -4593,7 +4821,8 @@ document.body.addEventListener('click', e => {
     'reintentar-auditoria': () => cargarAuditoria(),
     'confirmacion-cancelar': () => resolverConfirmacion(false),
     'confirmacion-aceptar': () => resolverConfirmacion(true),
-    'aviso-cerrar': () => cerrarAviso()
+    'aviso-cerrar': () => cerrarAviso(),
+    'cerrar-burbuja': () => cerrarBurbuja(btn)
   };
   if (acciones[accion]) { acciones[accion](); }
 });
