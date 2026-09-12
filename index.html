@@ -1224,14 +1224,19 @@ function esEcoDeEscrituraPropia(id) {
   return true;
 }
 
+// Se pone en true en cuanto este guardado escribe algo de verdad, para avisarles después a las
+// otras sesiones que hay novedades (ver avisarCambiosALasOtrasSesiones).
+let _huboEscrituras = false;
 async function aplicarDiff(tabla, diff) {
   if (diff.borrar.length) {
     anotarEscrituraPropia(diff.borrar);
+    _huboEscrituras = true;
     const { error } = await sb.from(tabla).delete().in('id', diff.borrar);
     if (error) throw new Error(`Borrando en ${tabla}: ${error.message}`);
   }
   if (diff.cambios.length) {
     anotarEscrituraPropia(diff.cambios.map(f => f.id));
+    _huboEscrituras = true;
     const { error } = await sb.from(tabla).upsert(diff.cambios);
     if (error) throw new Error(`Guardando en ${tabla}: ${error.message}`);
   }
@@ -1279,6 +1284,7 @@ async function guardar() {
 
       if (JSON.stringify(enviado.empresa) !== JSON.stringify(anterior.empresa)) {
         anotarEscrituraPropia([1]); // empresa_config es siempre la fila id=1
+        _huboEscrituras = true;
         const { error } = await sb.from('empresa_config').update({
           consecutivo_presupuesto: enviado.empresa.consecutivoPresupuesto,
           aiu_administracion_defecto: numero(enviado.empresa.aiuDefecto.administracion),
@@ -1292,6 +1298,7 @@ async function guardar() {
     })(), 30000);
 
     _ultimoEstadoSincronizado = enviado;
+    if (_huboEscrituras) { _huboEscrituras = false; avisarCambiosALasOtrasSesiones(); }
     marcarGuardado();
   } catch (e) {
     const t = document.getElementById('save-indicator-text');
@@ -1604,7 +1611,14 @@ function manejarCambioRealtime(payload) {
   const tabla = payload.table;
   const evento = payload.eventType; // 'INSERT' | 'UPDATE' | 'DELETE'
   const fila = evento === 'DELETE' ? payload.old : payload.new;
-  if (!fila || !fila.id) return; // DELETE sin REPLICA IDENTITY FULL en la tabla: no hay ni id, no se puede ubicar nada
+  if (!fila || !fila.id) {
+    // Pasa cuando la tabla no tiene REPLICA IDENTITY FULL: el aviso de un borrado llega sin datos
+    // suficientes para saber qué fila quitar. Antes se descartaba en silencio; ahora se dice, porque
+    // es exactamente la clase de cosa que se siente como "el borrado no se sincroniza". Igual no se
+    // pierde nada: el aviso directo entre sesiones y el respaldo periódico lo corrigen.
+    console.warn('Realtime: llegó un', evento, 'en', tabla, 'sin datos para ubicar la fila (¿falta REPLICA IDENTITY FULL en esa tabla?)', payload);
+    return;
+  }
   if (esEcoDeEscrituraPropia(fila.id)) return; // mi propio cambio volviendo: ya está aplicado, y reaplicarlo pisaría lo que siga escribiendo
   // Una línea por cambio recibido de otra persona. Son pocos (uno por edición, no por tecla) y
   // hacen que diagnosticar esto sea inmediato: si acá no aparece nada cuando alguien más guarda, el
@@ -1695,6 +1709,23 @@ const RESINCRONIZAR_CADA_MS = 8000;
 const RESINCRONIZAR_CONECTADO_CADA_MS = 30000;
 let _resincronizando = false;
 let _intervaloResincronizar = null;
+
+// Cuando otra sesión avisa que guardó algo, se resincroniza enseguida. Con un freno de 1,2s porque
+// quien está escribiendo guarda cada medio segundo: sin eso, cada tecla del otro lado dispararía
+// una recarga completa acá. 1,2s sigue siendo instantáneo para quien mira, y acota el trabajo.
+const resincronizarPorAviso = debounce(() => resincronizar('aviso de otra sesión'), 1200);
+
+// Le dice a las demás sesiones abiertas que acaban de pasar cosas. Va por el canal compartido de
+// presencia y no toca la base de datos: es solo un empujón para que no tengan que esperar al
+// respaldo periódico. Si falla (canal caído), no pasa nada: el respaldo sigue estando.
+function avisarCambiosALasOtrasSesiones() {
+  if (!_canalPresencia) return;
+  try {
+    _canalPresencia.send({ type: 'broadcast', event: 'datos-cambiaron', payload: { origen: ID_SESION_CANAL } });
+  } catch (e) {
+    console.warn('No se pudo avisar a las otras sesiones (seguirán viendo el cambio por el respaldo periódico):', e);
+  }
+}
 async function resincronizar(motivo) {
   if (!state || !ui.usuarioActual) return;    // todavía en el login: no hay nada que resincronizar
   if (_resincronizando || _guardando) return; // no atravesarse a algo que ya está en vuelo
@@ -1820,6 +1851,16 @@ function iniciarRealtime() {
         .filter(p => p.userId && (!ui.usuarioActual || p.userId !== ui.usuarioActual.id))
         .map(p => ({ userId: p.userId, nombre: p.nombre, campo: p.campo }));
       aplicarPresenciaVisible();
+    });
+    // Aviso directo de una sesión a otra: "acabo de guardar algo, revisa". Va por el canal
+    // compartido como mensaje suelto (broadcast), sin pasar por la base de datos ni por sus
+    // permisos de lectura — y por eso llega igual en los casos donde el aviso normal de la base no
+    // llega, que es justo lo que pasaba al BORRAR un anticipo: agregar y modificar se veían al
+    // instante, pero un borrado tardaba hasta 20 segundos porque solo lo traía el respaldo.
+    _canalPresencia.on('broadcast', { event: 'datos-cambiaron' }, (mensaje) => {
+      const origen = mensaje && mensaje.payload && mensaje.payload.origen;
+      if (origen === ID_SESION_CANAL) return; // es mi propio aviso volviendo
+      resincronizarPorAviso();
     });
     _canalPresencia.subscribe(estado => { if (estado === 'SUBSCRIBED') transmitirPresencia(null); });
   }
