@@ -4199,7 +4199,10 @@ function crearCatalogoDesdeCombobox(nombre) {
 async function cargarUsuariosAdmin() {
   ui.adminCargandoUsuarios = true;
   if (ui.vista === 'admin') renderVistaAdmin();
-  const { data, error } = await sb.from('profiles').select('id, nombre, email, cargo, avatar_url, rol, color, created_at').order('created_at');
+  let { data, error } = await sb.from('profiles').select('id, nombre, email, cargo, avatar_url, rol, color, created_at').order('created_at');
+  if (esColumnaQueFalta(error, 'color')) {
+    ({ data, error } = await sb.from('profiles').select('id, nombre, email, cargo, avatar_url, rol, created_at').order('created_at'));
+  }
   ui.adminUsuarios = error ? [] : (data || []);
   ui.adminCargandoUsuarios = false;
   if (ui.vista === 'admin') renderVistaAdmin();
@@ -4329,7 +4332,12 @@ async function guardarEdicionUsuario() {
   ui.modalEditarUsuarioError = null;
   renderModalEditarUsuario();
 
-  const { error } = await sb.from('profiles').update({ nombre, cargo, rol, color: tono }).eq('id', id);
+  let { error } = await sb.from('profiles').update({ nombre, cargo, rol, color: tono }).eq('id', id);
+  if (esColumnaQueFalta(error, 'color')) {
+    // Sin la columna todavía: se guarda todo lo demás en vez de fallar entero por el color.
+    ({ error } = await sb.from('profiles').update({ nombre, cargo, rol }).eq('id', id));
+    if (!error) console.warn('El color no se guardó: falta correr agregar-color-de-usuario.sql en Supabase.');
+  }
   ui.modalEditarUsuarioEnviando = false;
   if (error) {
     ui.modalEditarUsuarioError = 'No se pudo guardar: ' + error.message;
@@ -5319,11 +5327,25 @@ async function cerrarSesion() {
 
 // Ya con sesión válida (recién iniciada, o ya existente al recargar la página): trae el perfil
 // (para saber el rol), carga los datos reales desde Supabase, y recién ahí muestra la app.
+/* La columna `color` de profiles es opcional: existe solo si ya se corrió
+   agregar-color-de-usuario.sql. Si todavía no está, se consulta sin ella y cada quien conserva su
+   color automático. Esto NO es un adorno defensivo: pedirla sin más dejaba la app sin poder leer el
+   perfil —y por lo tanto sin poder entrar— en cualquier base que aún no tuviera la columna. Una
+   función nueva nunca puede dejar fuera a quien no ha corrido el SQL todavía. */
+function esColumnaQueFalta(error, columna) {
+  const msg = (error && (error.message || '')) + ' ' + (error && (error.details || ''));
+  return !!error && msg.toLowerCase().includes(columna);
+}
+async function traerPerfilPropio(id) {
+  const conColor = await sb.from('profiles').select('nombre, rol, avatar_url, color').eq('id', id).maybeSingle();
+  if (!esColumnaQueFalta(conColor.error, 'color')) return conColor;
+  return await sb.from('profiles').select('nombre, rol, avatar_url').eq('id', id).maybeSingle();
+}
+
 async function continuarConSesion(session, esLoginFresco) {
   let perfil, error;
   try {
-    ({ data: perfil, error } = await conTiempoLimite(
-      sb.from('profiles').select('nombre, rol, avatar_url, color').eq('id', session.user.id).maybeSingle(), 15000));
+    ({ data: perfil, error } = await conTiempoLimite(traerPerfilPropio(session.user.id), 15000));
   } catch (e) {
     mostrarErrorDeArranque('No se pudo conectar con el servidor. Revisa tu conexión e intenta de nuevo.');
     return;
