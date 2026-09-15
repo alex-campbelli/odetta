@@ -199,7 +199,7 @@ main:has([data-view="auditoria"].is-active){ max-width:1400px; }
 .badge-aprobado{ background:var(--green-soft); color:var(--green); }
 .badge-rechazado{ background:var(--coral-soft); color:var(--coral); }
 
-.tag-apu{ display:inline-flex; font-size:.64rem; font-weight:700; background:var(--teal-soft); color:var(--teal); border-radius:6px; padding:2px 6px; letter-spacing:.03em; }
+.tag-precio{ display:inline-flex; font-size:.64rem; font-weight:700; background:var(--teal-soft); color:var(--teal); border-radius:6px; padding:2px 6px; letter-spacing:.03em; }
 
 .catalogo-mini-toggle{ display:flex; gap:3px; margin-top:3px; }
 .catalogo-mini-toggle button{
@@ -259,8 +259,8 @@ th.num{ text-align:right; }
   color:var(--ink-soft); cursor:pointer; transition:background .12s ease, color .12s ease;
 }
 .modo-toggle button.is-active{ background:var(--surface); color:var(--accent-strong); box-shadow:var(--shadow); }
-.apu-summary{ display:flex; flex-wrap:wrap; gap:14px; align-items:center; margin-top:16px; padding:14px 16px; background:var(--accent-soft); border-radius:12px; font-size:.86rem; }
-.apu-summary b{ font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; color:var(--accent-strong); }
+.resumen-precio{ display:flex; flex-wrap:wrap; gap:14px; align-items:center; margin-top:16px; padding:14px 16px; background:var(--accent-soft); border-radius:12px; font-size:.86rem; }
+.resumen-precio b{ font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; color:var(--accent-strong); }
 .modal-foot{ display:flex; justify-content:flex-end; gap:8px; margin-top:18px; }
 .modal-mensaje{ color:var(--ink-soft); font-size:.92rem; line-height:1.5; }
 .badge-select{
@@ -305,7 +305,7 @@ th.num{ text-align:right; }
 .chapter-add-item{ margin-top:10px; }
 .price-btn{ border:1px solid var(--line-strong); background:var(--surface); border-radius:8px; padding:6px 10px; font-size:.83rem; cursor:pointer; display:inline-flex; align-items:center; gap:6px; font-family:'IBM Plex Mono',monospace; transition:border-color .12s ease; }
 .price-btn:hover{ border-color:var(--accent); background:var(--accent-soft); }
-.price-costo-directo{ font-size:.72rem; color:var(--ink-faint); margin-top:3px; text-align:right; }
+.price-costo{ font-size:.72rem; color:var(--ink-faint); margin-top:3px; text-align:right; }
 
 .chapters-toolbar{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
 
@@ -336,8 +336,11 @@ th.num{ text-align:right; }
 .doc-intro{ font-size:.88rem; color:var(--ink-soft); margin-bottom:18px; }
 .doc-chapter-title{ background:var(--accent-soft); color:var(--accent-strong); font-weight:700; padding:8px 14px; font-size:.82rem; text-transform:uppercase; letter-spacing:.03em; margin-top:18px; border-radius:9px; }
 .doc-sheet table{ font-size:.83rem; }
-.doc-summary{ margin-top:20px; max-width:340px; margin-left:auto; background:var(--surface-2); border-radius:14px; padding:6px 16px; }
-.doc-summary .row{ display:flex; justify-content:space-between; padding:7px 0; font-size:.87rem; border-bottom:1px solid var(--line); }
+.doc-summary{ margin-top:20px; max-width:380px; margin-left:auto; background:var(--surface-2); border-radius:14px; padding:6px 16px; }
+/* Con centavos los valores son más largos: el valor nunca se parte en dos renglones; si no cabe, es el
+   nombre de la fila ("Saldo pendiente (todos)") el que baja de renglón. */
+.doc-summary .row{ display:flex; justify-content:space-between; align-items:baseline; gap:12px; padding:7px 0; font-size:.87rem; border-bottom:1px solid var(--line); }
+.doc-summary .row .mono{ white-space:nowrap; }
 .doc-summary .row:last-of-type{ border-bottom:none; }
 .doc-summary .row.total{ border-bottom:none; border-top:2px solid var(--accent-strong); margin-top:4px; padding-top:11px; padding-bottom:11px; font-weight:700; font-size:1.1rem; color:var(--accent-strong); }
 .doc-conditions{ margin-top:28px; font-size:.83rem; color:var(--ink-soft); }
@@ -884,7 +887,6 @@ const CAPITULOS_SUGERIDOS = [
   'Carpintería y mobiliario'
 ];
 
-const TIPOS_RECURSO = ['Mano de obra', 'Material', 'Transporte', 'Equipo', 'Otro'];
 const ESTADOS_PRESUPUESTO = ['Borrador', 'Enviado', 'Aprobado', 'Rechazado'];
 const ESTADOS_CATALOGO = ['activo', 'descontinuado'];
 // Reutiliza los mismos tokens de color de los badges de estado de presupuesto (aprobado/enviado/
@@ -982,40 +984,122 @@ function numero(v) {
   const n = parseFloat(String(v ?? '').replace(',', '.'));
   return Number.isFinite(n) ? n : 0;
 }
-function redondear(n) { return Math.round(numero(n)); }
+// El dinero se maneja con centavos: todo se redondea a 2 decimales, igual a lo que se digita (antes se
+// redondeaba al peso y un costo de 18.500,75 se imprimía como $18.501). toPrecision(15) quita el ruido de
+// la coma flotante antes de redondear: 1,005 × 100 da 100,4999… y sin esto bajaría a 1,00 en vez de 1,01.
+// Los negativos se redondean igual que los positivos, y nunca se devuelve -0 (se vería "-$ 0,00").
+function redondear(n) {
+  const x = Number((numero(n) * 100).toPrecision(15));
+  const r = Math.sign(x) * Math.round(Math.abs(x)) / 100;
+  return r === 0 ? 0 : r;
+}
 function decimalAPorcentaje(v) { return Math.round(numero(v) * 10000) / 100; }
+// 0.055 → "5,5%". Antes los porcentajes impresos se redondeaban al entero (5,5% salía como 6%).
+function formatPorcentaje(v) { return formatNum(decimalAPorcentaje(v)) + '%'; }
 function hoyISO() {
   // Fecha local, no UTC: toISOString() puede adelantar o atrasar un día según la zona horaria del usuario.
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-const fmtCOP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+const fmtCOP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 function formatCOP(n) { return fmtCOP.format(redondear(n)); }
 
 const fmtNum = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2 });
 function formatNum(n) { return fmtNum.format(numero(n)); }
 
-// Contraparte de lectura de aplicarCampo(): busca el valor real guardado en el state para un campo
-// con formato de pesos (los precios del catálogo y el valor de un anticipo, ver data-formato-cop más
-// abajo). Devuelve null si no sabe leer esa entidad, y quien llama entonces NO toca lo que hay en
-// pantalla: devolver 0 en ese caso mostraría un "0" que no es el dato real (fue exactamente el bug
-// que apareció al poner data-formato-cop en los anticipos sin agregarlos también acá).
-function leerCampoCOP(el) {
-  const entidad = el.dataset.entidad, id = el.dataset.id, campo = el.dataset.campo;
-  if (entidad === 'catalogo') { const c = encontrarCatalogo(id); return c ? numero(c[campo]) : null; }
-  if (entidad === 'catalogoManoObra') { const c = state.catalogoManoObra.find(x => x.id === id); return c ? numero(c[campo]) : null; }
-  if (entidad === 'item') {
-    const p = presupuestoActivo();
-    const f = p ? encontrarItemGlobal(p, id) : null;
-    return f ? numero(f.item[campo]) : null;
+/* ---------- Campos donde se escriben valores ----------
+   Todos los campos numéricos se escriben y se ven en formato colombiano MIENTRAS se teclea: punto
+   para los miles, coma para los decimales, máximo 2 decimales (1.250.000,50). Antes el formato solo
+   aparecía al salir del campo, y adentro se veía el número crudo.
+   - Un campo en 0 se muestra vacío, con un "0" gris de fondo: antes el 0 era texto real, y al hacer
+     clic había que borrarlo antes de escribir (y si no se borraba, "0" + "5" daba "05").
+   - Los puntos de miles los pone la app: nadie tiene que teclearlos. Por eso cualquier punto o coma
+     que se escriba se toma como la coma decimal (también el punto del teclado numérico).
+   - Campos de números enteros (p.ej. días de validez) llevan data-entero: no aceptan decimales. */
+function leerNumeroDigitado(texto) {
+  const limpio = String(texto ?? '').replace(/\./g, '').replace(',', '.').replace(/[^\d.]/g, '');
+  const n = parseFloat(limpio);
+  return Number.isFinite(n) ? n : 0;
+}
+function agruparMiles(digitos) {
+  return digitos.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+// Texto con el que se pinta un campo numérico: vacío si vale 0, y si no, con miles y hasta 2 decimales.
+function valorCampoNumerico(n) {
+  const v = redondear(n);
+  if (v === 0) return '';
+  const [entero, decimales] = Math.abs(v).toFixed(2).split('.');
+  const dec = decimales.replace(/0+$/, '');
+  return (v < 0 ? '-' : '') + agruparMiles(entero) + (dec ? ',' + dec : '');
+}
+// Atributos de un <input> numérico, para no repetirlos (ni olvidar alguno) en cada plantilla.
+function atributosCampoNumerico(valor, opciones) {
+  const porcentaje = !!(opciones && opciones.porcentaje), entero = !!(opciones && opciones.entero);
+  const n = porcentaje ? decimalAPorcentaje(valor) : numero(valor);
+  return `inputmode="${entero ? 'numeric' : 'decimal'}" placeholder="0" autocomplete="off"${entero ? ' data-entero' : ''} value="${valorCampoNumerico(entero ? Math.round(n) : n)}"`;
+}
+function esCampoNumerico(el) {
+  return !!(el && el.dataset && (el.dataset.numerico !== undefined || el.dataset.porcentaje !== undefined));
+}
+// Reformatea el campo en cada tecla y deja el cursor donde corresponde. `evento` es el InputEvent.
+function formatearCampoMientrasSeEscribe(el, evento) {
+  const entero = el.dataset.entero !== undefined;
+  const tipo = (evento && evento.inputType) || '';
+  const tecla = evento ? evento.data : null;
+  let texto = String(el.value ?? '');
+  let cursor = typeof el.selectionStart === 'number' ? el.selectionStart : texto.length;
+  const previo = el._valorPrevio !== undefined ? el._valorPrevio : String(el.defaultValue ?? '');
+  const significativos = t => t.replace(/[^\d,]/g, '');
+
+  if (tipo === 'insertFromPaste' || tipo === 'insertFromDrop') {
+    // Lo pegado puede venir como 1.250.000,50 o como 1250000.50: si trae punto y coma, el último
+    // de los dos es el decimal; si trae solo puntos, es decimal si hay uno solo y no le siguen 3 cifras.
+    const ultimoPunto = texto.lastIndexOf('.'), ultimaComa = texto.lastIndexOf(',');
+    let decimalEn = -1;
+    if (ultimoPunto >= 0 && ultimaComa >= 0) decimalEn = Math.max(ultimoPunto, ultimaComa);
+    else if (ultimaComa >= 0) decimalEn = ultimaComa;
+    else if (ultimoPunto >= 0 && texto.indexOf('.') === ultimoPunto && !/^\d{3}$/.test(texto.slice(ultimoPunto + 1).replace(/\D/g, ''))) decimalEn = ultimoPunto;
+    texto = decimalEn >= 0
+      ? texto.slice(0, decimalEn).replace(/[.,]/g, '') + ',' + texto.slice(decimalEn + 1).replace(/[.,]/g, '')
+      : texto.replace(/[.,]/g, '');
+    cursor = texto.length;
+  } else if (tecla && /[.,]/.test(tecla) && tipo.indexOf('insert') === 0) {
+    // Lo recién escrito está justo antes del cursor. Puede ser una sola tecla o varias de una vez
+    // (autocompletar, dictado, algunos teclados entregan "12.5" en un único evento): cualquier punto o
+    // coma ahí adentro es la coma decimal, y solo la primera cuenta si el campo aún no tenía una.
+    const inicio = Math.max(0, cursor - tecla.length);
+    const antes = texto.slice(0, inicio), trozo = texto.slice(inicio, cursor), despues = texto.slice(cursor);
+    let hayComa = entero || (antes + despues).includes(',');
+    let limpio = '';
+    for (const ch of trozo) {
+      if (ch === '.' || ch === ',') { if (!hayComa) { limpio += ','; hayComa = true; } }
+      else limpio += ch;
+    }
+    texto = antes + limpio + despues;
+    cursor = antes.length + limpio.length;
+  } else if ((tipo === 'deleteContentBackward' || tipo === 'deleteContentForward') && previo.length === texto.length + 1 && significativos(previo) === significativos(texto)) {
+    // Solo se borró un punto de miles (que la app volvería a poner): se borra el dígito de al lado,
+    // que es lo que la persona quería. Si no, Retroceso parecería no hacer nada.
+    if (tipo === 'deleteContentBackward' && cursor > 0) { texto = texto.slice(0, cursor - 1) + texto.slice(cursor); cursor -= 1; }
+    else if (tipo === 'deleteContentForward') { texto = texto.slice(0, cursor) + texto.slice(cursor + 1); }
   }
-  if (entidad === 'anticipoPersonal') {
-    const r = registroPersonalActivo();
-    const a = r ? r.anticipos.find(x => x.id === id) : null;
-    return a ? numero(a[campo]) : null;
-  }
-  return null;
+
+  const antesDelCursor = significativos(texto.slice(0, cursor)).length;
+  const coma = texto.indexOf(',');
+  let parteEntera = (coma >= 0 ? texto.slice(0, coma) : texto).replace(/\D/g, '');
+  let parteDecimal = coma >= 0 && !entero ? texto.slice(coma + 1).replace(/\D/g, '').slice(0, 2) : null;
+  const cerosQuitados = (parteEntera.match(/^0+(?=\d)/) || [''])[0].length;
+  parteEntera = parteEntera.slice(cerosQuitados);
+  let nuevo = agruparMiles(parteEntera) + (parteDecimal !== null ? ',' + parteDecimal : '');
+  let ajuste = -cerosQuitados;
+  if (nuevo.startsWith(',')) { nuevo = '0' + nuevo; ajuste += 1; } // ",5" se lee "0,5"
+
+  let destino = Math.max(0, antesDelCursor + ajuste), pos = 0, contados = 0;
+  while (pos < nuevo.length && contados < destino) { if (/[\d,]/.test(nuevo[pos])) contados++; pos++; }
+  el.value = nuevo;
+  el._valorPrevio = nuevo;
+  if (typeof el.setSelectionRange === 'function') { try { el.setSelectionRange(pos, pos); } catch (e) { /* campo no enfocado */ } }
 }
 
 function formatFechaCorta(iso) {
@@ -1042,7 +1126,6 @@ function estadoInicial() {
       consecutivoPresupuesto: 1,
       aiuDefecto: { administracion: 0.05, imprevistos: 0.05, utilidad: 0.05 },
       ivaSobreUtilidadDefecto: 0.19,
-      factorMargenDefecto: 0.75,
       formaPagoDefecto: '50% anticipo, saldo contra avance de obra'
     },
     catalogo: [],
@@ -1103,16 +1186,14 @@ let _columnaGananciaDisponible = true;
 function filaAObjetoItem(f) {
   return {
     id: f.id, capituloId: f.capitulo_id, descripcion: f.descripcion || '', unidad: f.unidad || 'und', cantidad: numero(f.cantidad),
-    modoPrecio: f.modo_precio || 'directo', precioDirecto: numero(f.precio_directo), gananciaDirecto: numero(f.ganancia_directo), catalogoFiltro: f.catalogo_filtro || null,
-    trabajadorAsociadoId: f.trabajador_asociado_id || null, conceptoAsociadoId: f.concepto_asociado_id || null, orden: f.orden ?? 0,
-    apu: { factorMargen: f.apu_factor_margen != null ? numero(f.apu_factor_margen) : 0.75, recursos: [] }
+    precioDirecto: numero(f.precio_directo), gananciaDirecto: numero(f.ganancia_directo), catalogoFiltro: f.catalogo_filtro || null,
+    trabajadorAsociadoId: f.trabajador_asociado_id || null, conceptoAsociadoId: f.concepto_asociado_id || null, orden: f.orden ?? 0
   };
 }
 function objetoAFilaItem(it) {
   const fila = {
     id: it.id, capitulo_id: it.capituloId, descripcion: it.descripcion, unidad: it.unidad, cantidad: numero(it.cantidad),
-    modo_precio: it.modoPrecio, precio_directo: numero(it.precioDirecto), catalogo_filtro: it.catalogoFiltro || null,
-    apu_factor_margen: it.apu ? numero(it.apu.factorMargen) : null,
+    precio_directo: numero(it.precioDirecto), catalogo_filtro: it.catalogoFiltro || null,
     trabajador_asociado_id: it.trabajadorAsociadoId || null, concepto_asociado_id: it.conceptoAsociadoId || null, orden: it.orden
   };
   if (_columnaGananciaDisponible) fila.ganancia_directo = numero(it.gananciaDirecto) || 0;
@@ -1137,14 +1218,6 @@ function desactivarGananciaPorFaltaDeColumna() {
 function aplanarItems(presupuestos) {
   const filas = [];
   presupuestos.forEach(p => p.capitulos.forEach(cap => cap.items.forEach((it, i) => filas.push({ ...it, capituloId: cap.id, orden: i }))));
-  return filas;
-}
-
-function filaAObjetoRecurso(f) { return { id: f.id, itemId: f.item_id, tipo: f.tipo || 'Material', descripcion: f.descripcion || '', unidad: f.unidad || '', cantidad: numero(f.cantidad), precioUnitario: numero(f.precio_unitario), catalogoId: f.catalogo_id || null }; }
-function objetoAFilaRecurso(r) { return { id: r.id, item_id: r.itemId, tipo: r.tipo, descripcion: r.descripcion, unidad: r.unidad, cantidad: numero(r.cantidad), precio_unitario: numero(r.precioUnitario), catalogo_id: r.catalogoId || null }; }
-function aplanarRecursos(presupuestos) {
-  const filas = [];
-  presupuestos.forEach(p => p.capitulos.forEach(cap => cap.items.forEach(it => it.apu.recursos.forEach(r => filas.push({ ...r, itemId: it.id })))));
   return filas;
 }
 
@@ -1186,7 +1259,6 @@ function filaAObjetoEmpresa(f) {
     consecutivoPresupuesto: f.consecutivo_presupuesto ?? 1,
     aiuDefecto: { administracion: numero(f.aiu_administracion_defecto), imprevistos: numero(f.aiu_imprevistos_defecto), utilidad: numero(f.aiu_utilidad_defecto) },
     ivaSobreUtilidadDefecto: numero(f.iva_sobre_utilidad_defecto),
-    factorMargenDefecto: numero(f.factor_margen_defecto),
     formaPagoDefecto: '50% anticipo, saldo contra avance de obra' // no vive en la nube, siempre fue un texto fijo
   };
 }
@@ -1240,13 +1312,12 @@ async function cargar() {
     sb.from('presupuestos').select('*').order('id'),
     sb.from('capitulos').select('*').order('orden'),
     sb.from('items').select('*').order('orden'),
-    sb.from('recursos_apu').select('*').order('id'),
     sb.from('catalogo_materiales').select('*').order('id'),
     sb.from('catalogo_servicios').select('*').order('id'),
     sb.from('catalogo_mano_obra').select('*').order('id'),
     sb.from('empresa_config').select('*').eq('id', 1).maybeSingle()
   ]);
-  const [rClientes, rRegistros, rConceptos, rAnticipos, rPresupuestos, rCapitulos, rItems, rRecursos, rCatMateriales, rCatServicios, rCatManoObra, rEmpresa] = consultas;
+  const [rClientes, rRegistros, rConceptos, rAnticipos, rPresupuestos, rCapitulos, rItems, rCatMateriales, rCatServicios, rCatManoObra, rEmpresa] = consultas;
   const conError = consultas.find(r => r.error);
   if (conError) throw new Error('No se pudo cargar la información desde Supabase: ' + conError.error.message);
 
@@ -1272,7 +1343,6 @@ async function cargar() {
   const itemsPorId = new Map(items.map(i => [i.id, i]));
   items.forEach(it => { const c = capitulosPorId.get(it.capituloId); if (c) c.items.push(it); });
 
-  (rRecursos.data || []).map(filaAObjetoRecurso).forEach(r => { const it = itemsPorId.get(r.itemId); if (it) it.apu.recursos.push(r); });
 
   state = estadoInicial();
   state.clientes = clientes;
@@ -1412,7 +1482,6 @@ async function guardar() {
         desactivarGananciaPorFaltaDeColumna();
         await aplicarDiff('items', calcularDiff(aplanarItems(enviado.presupuestos).map(objetoAFilaItem), aplanarItems(anterior.presupuestos).map(objetoAFilaItem)));
       }
-      await aplicarDiff('recursos_apu', calcularDiff(aplanarRecursos(enviado.presupuestos).map(objetoAFilaRecurso), aplanarRecursos(anterior.presupuestos).map(objetoAFilaRecurso)));
       await aplicarDiff('catalogo_materiales', calcularDiff(enviado.catalogo.map(objetoAFilaCatalogoMaterial), anterior.catalogo.map(objetoAFilaCatalogoMaterial)));
       await aplicarDiff('catalogo_servicios', calcularDiff(enviado.catalogoServicios.map(objetoAFilaCatalogoServicio), anterior.catalogoServicios.map(objetoAFilaCatalogoServicio)));
       await aplicarDiff('catalogo_mano_obra', calcularDiff(enviado.catalogoManoObra.map(objetoAFilaCatalogoManoObra), anterior.catalogoManoObra.map(objetoAFilaCatalogoManoObra)));
@@ -1426,8 +1495,7 @@ async function guardar() {
           aiu_administracion_defecto: numero(enviado.empresa.aiuDefecto.administracion),
           aiu_imprevistos_defecto: numero(enviado.empresa.aiuDefecto.imprevistos),
           aiu_utilidad_defecto: numero(enviado.empresa.aiuDefecto.utilidad),
-          iva_sobre_utilidad_defecto: numero(enviado.empresa.ivaSobreUtilidadDefecto),
-          factor_margen_defecto: numero(enviado.empresa.factorMargenDefecto)
+          iva_sobre_utilidad_defecto: numero(enviado.empresa.ivaSobreUtilidadDefecto)
         }).eq('id', 1);
         if (error) throw new Error('Guardando configuración de empresa: ' + error.message);
       }
@@ -1488,7 +1556,7 @@ document.addEventListener('visibilitychange', () => {
    nada en pantalla directamente. Qué hacer con el DOM después de fusionar un cambio se decide
    aparte, en pintarCambioRealtime() — separar las dos cosas es lo que permite que fusionar sea
    siempre seguro (es solo memoria) aunque pintar no siempre lo sea (podría interrumpir a alguien
-   escribiendo). Ver agregar-realtime.sql: las 6 tablas anidadas (capitulos/items/recursos_apu/
+   escribiendo). Ver agregar-realtime.sql: las 5 tablas anidadas (capitulos/items/
    registros_personal/conceptos_personal/anticipos_personal) corren con REPLICA IDENTITY FULL para
    que un evento DELETE siempre traiga la fila completa (incluida la clave foránea al padre) — sin
    eso, Postgres por defecto solo garantiza el id en un DELETE, y no alcanzaría para saber dónde
@@ -1548,27 +1616,8 @@ function fusionarItem(evento, fila) {
     for (const p of raizPresupuestos) {
       const cap = p.capitulos.find(c => c.id === fila.capitulo_id);
       if (!cap) continue;
-      const recursosPrevios = cap.items.find(i => i.id === fila.id)?.apu?.recursos;
-      const item = fusionarEnLista(cap.items, evento, filaAObjetoItem(fila));
-      if (item && recursosPrevios) item.apu.recursos = recursosPrevios;
+      fusionarEnLista(cap.items, evento, filaAObjetoItem(fila));
       return p;
-    }
-    return null;
-  };
-  const p1 = aplicarA(state.presupuestos);
-  aplicarA(_ultimoEstadoSincronizado.presupuestos);
-  if (p1) calcularPresupuesto(p1);
-}
-
-function fusionarRecurso(evento, fila) {
-  const aplicarA = raizPresupuestos => {
-    for (const p of raizPresupuestos) {
-      for (const cap of p.capitulos) {
-        const item = cap.items.find(i => i.id === fila.item_id);
-        if (!item) continue;
-        fusionarEnLista(item.apu.recursos, evento, filaAObjetoRecurso(fila));
-        return p;
-      }
     }
     return null;
   };
@@ -1647,7 +1696,6 @@ const REALTIME_TABLAS = {
   presupuestos: fusionarPresupuesto,
   capitulos: fusionarCapitulo,
   items: fusionarItem,
-  recursos_apu: fusionarRecurso,
   registros_personal: fusionarRegistro,
   conceptos_personal: fusionarConceptoPersonal,
   anticipos_personal: fusionarAnticipoPersonal,
@@ -1745,7 +1793,7 @@ function modalPersonalEstaPintado() {
 }
 
 const VISTAS_REALTIME_SOLO_LECTURA = {
-  'vista-cliente': { tablas: ['presupuestos', 'capitulos', 'items', 'recursos_apu'], render: () => renderVistaCliente() },
+  'vista-cliente': { tablas: ['presupuestos', 'capitulos', 'items'], render: () => renderVistaCliente() },
   'vista-costos-personal': { tablas: TABLAS_PERSONAL, render: () => renderVistaCostosPersonal() },
   // Estas dos muestran saldos de mano de obra (el pendiente por cliente y el total pendiente de
   // personal), que dependen de los conceptos y los anticipos, no solo del registro: antes escuchaban
@@ -1784,7 +1832,7 @@ function pintarCambioRealtimeSegunVista(tabla, evento, fila) {
   const lectura = VISTAS_REALTIME_SOLO_LECTURA[ui.vista];
   if (lectura && lectura.tablas.includes(tabla)) { lectura.render(); return; }
 
-  if (ui.vista === 'editor-presupuesto' && ['presupuestos', 'capitulos', 'items', 'recursos_apu'].includes(tabla)) {
+  if (ui.vista === 'editor-presupuesto' && ['presupuestos', 'capitulos', 'items'].includes(tabla)) {
     if (presupuestoActivo()) { recalcularActivo(); refrescarNumerosEditor(); }
     return;
   }
@@ -2094,8 +2142,8 @@ function editandoUnCampoAhora() {
 // data-porcentaje se guardan como fracción (18% → 0.18). Vive aparte porque lo necesitan dos
 // lugares — el tecleo normal y la restauración después de un repintado — y tienen que coincidir.
 function valorDeCampoDesdeInput(el) {
-  if (el.dataset.numerico !== undefined) return numero(el.value);
-  if (el.dataset.porcentaje !== undefined) return numero(el.value) / 100;
+  if (el.dataset.numerico !== undefined) return leerNumeroDigitado(el.value);
+  if (el.dataset.porcentaje !== undefined) return leerNumeroDigitado(el.value) / 100;
   return el.value;
 }
 
@@ -2123,7 +2171,7 @@ const resincronizarPorAviso = debounce(() => resincronizar('aviso de otra sesió
 const AMBITO_POR_TABLA = {
   registros_personal: 'mano-de-obra', conceptos_personal: 'mano-de-obra', anticipos_personal: 'mano-de-obra',
   clientes: 'clientes',
-  presupuestos: 'presupuestos', capitulos: 'presupuestos', items: 'presupuestos', recursos_apu: 'presupuestos',
+  presupuestos: 'presupuestos', capitulos: 'presupuestos', items: 'presupuestos',
   catalogo_materiales: 'catalogo', catalogo_servicios: 'catalogo', catalogo_mano_obra: 'catalogo',
   empresa_config: 'configuracion'
 };
@@ -2388,57 +2436,17 @@ function reintentarCanalDatos() {
 /* ============================================================
    5. MOTOR DE CÁLCULO
    ============================================================ */
-function calcularRecurso(r) {
-  r._total = redondear(numero(r.cantidad) * numero(r.precioUnitario));
-  return r._total;
-}
-function calcularApu(apu) {
-  const costoDirecto = apu.recursos.reduce((s, r) => s + calcularRecurso(r), 0);
-  apu._costoDirecto = redondear(costoDirecto);
-  const factor = numero(apu.factorMargen) || 0;
-  apu._precioUnitarioSugerido = redondear(costoDirecto * (1 + factor));
-  return apu._precioUnitarioSugerido;
-}
-/* Tres valores por ítem:
-   - `_precioBase`: lo que el ítem cuesta antes de la ganancia oculta de precio directo.
-   - `_precioUnitario`: lo que ve y paga el cliente, y lo único que se imprime.
-   - `_pagoTrabajador`: lo que se le paga al trabajador asociado. La regla del negocio, en palabras
-     del dueño: "si la puesta de un piso me sale en 50.000, al trabajador le pago 50.000 aunque al
-     cliente le suba un 10%". O sea, lo que cuesta SU trabajo, nunca el precio con ganancia:
-       · precio directo → el costo escrito (sin la ganancia).
-       · análisis de precio unitario → solo los recursos de mano de obra. Antes cobraba el precio
-         completo con el factor de ganancia: su trabajo, más los materiales, el transporte y la
-         ganancia del negocio. Si el análisis no tiene ningún recurso de mano de obra, cobra el costo
-         directo (sin ganancia) para no quedar en $0.
-   En precio directo, la ganancia es un porcentaje sobre el costo que se escribe (`gananciaDirecto`,
-   0.30 = 30%). Arranca en 0: todos los ítems que ya existían siguen costando exactamente lo mismo.
-   OJO: NO se reutiliza `apu.factorMargen` para esto a propósito — ese campo ya viene guardado con
-   0.75 en todos los ítems de precio directo (se ignoraba ahí), y aplicarlo habría subido un 75% de
-   golpe todos los presupuestos ya hechos. El análisis de precio unitario no cambia: su ganancia sigue
-   siendo su propio factor sobre los recursos. */
-/* Un recurso es mano de obra si su tipo lo dice, O si viene del catálogo de mano de obra. Lo
-   segundo hace falta porque elegir un recurso del catálogo no le cambiaba el tipo: un recurso nuevo
-   nace como "Material", y un oficial sacado del catálogo de mano de obra se quedaba así si nadie
-   tocaba el desplegable. Mirar de qué catálogo vino corrige también los que ya estaban guardados, sin
-   tener que modificarlos uno por uno. */
-function esRecursoManoDeObra(r) {
-  if (r.tipo === 'Mano de obra') return true;
-  if (!r.catalogoId || !state || !state.catalogoManoObra) return false;
-  return state.catalogoManoObra.some(c => c.id === r.catalogoId);
-}
+/* Dos precios por ítem:
+   - `_precioBase`: el costo que se escribe. Es también lo que se le paga a un trabajador asociado.
+     Regla del dueño: "si la puesta de un piso me sale en 50.000, al trabajador le pago 50.000 aunque
+     al cliente le suba un 10%" — lo que cuesta su trabajo, nunca el precio con ganancia.
+   - `_precioUnitario`: costo + % de ganancia (`gananciaDirecto`, 0.30 = 30%). Es lo que ve y paga el
+     cliente, y lo único que se imprime.
+   (Antes existía además el "análisis de precio unitario", armado con recursos y un factor de
+   ganancia. Se retiró por completo: no le servía al negocio y confundía.) */
 function calcularItem(it) {
-  if (it.modoPrecio === 'apu') {
-    it._precioBase = calcularApu(it.apu);
-    it._precioUnitario = it._precioBase;
-    const manoDeObra = it.apu.recursos.filter(esRecursoManoDeObra);
-    it._pagoTrabajador = manoDeObra.length
-      ? redondear(manoDeObra.reduce((s, r) => s + numero(r._total), 0))
-      : it.apu._costoDirecto;
-  } else {
-    it._precioBase = redondear(numero(it.precioDirecto));
-    it._precioUnitario = redondear(it._precioBase * (1 + (numero(it.gananciaDirecto) || 0)));
-    it._pagoTrabajador = it._precioBase;
-  }
+  it._precioBase = redondear(numero(it.precioDirecto));
+  it._precioUnitario = redondear(it._precioBase * (1 + (numero(it.gananciaDirecto) || 0)));
   it._total = redondear(numero(it.cantidad) * it._precioUnitario);
   return it._total;
 }
@@ -2455,7 +2463,7 @@ function calcularPresupuesto(p) {
   const utilidad = aplicaAiu ? redondear(subtotal * numero(p.aiu.utilidad)) : 0;
   // OJO: el IVA aplica solo sobre la línea de utilidad, nunca sobre el subtotal ni sobre el A.I.U. completo.
   const ivaUtilidad = aplicaAiu ? redondear(utilidad * numero(p.ivaSobreUtilidad)) : 0;
-  const total = subtotal + admin + imprevistos + utilidad + ivaUtilidad;
+  const total = redondear(subtotal + admin + imprevistos + utilidad + ivaUtilidad);
   p._totales = { subtotal, admin, imprevistos, utilidad, ivaUtilidad, total };
   return p._totales;
 }
@@ -2489,9 +2497,9 @@ function calcularRegistroPersonal(r) {
   r.conceptos.sort((a, b) => String(a.id) < String(b.id) ? -1 : 1);
   const subtotal = redondear(r.conceptos.reduce((s, cp) => s + calcularConceptoPersonal(cp), 0));
   const retencion = redondear(subtotal * numero(r.retencionPorcentaje));
-  const totalXPagar = subtotal - retencion;
+  const totalXPagar = redondear(subtotal - retencion);
   const totalAnticipos = redondear(r.anticipos.reduce((s, a) => s + numero(a.valor), 0));
-  const saldo = totalXPagar - totalAnticipos;
+  const saldo = redondear(totalXPagar - totalAnticipos);
   r._subtotal = subtotal; r._retencion = retencion; r._totalXPagar = totalXPagar;
   r._totalAnticipos = totalAnticipos; r._saldo = saldo;
   return r;
@@ -2515,7 +2523,6 @@ function encontrarItemGlobal(p, itemId) {
   }
   return null;
 }
-function encontrarRecurso(item, recId) { return item.apu.recursos.find(r => r.id === recId) || null; }
 function encontrarCatalogo(id) { return state.catalogo.find(c => c.id === id) || null; }
 // Busca por nombre exacto en los 3 catálogos (materiales, servicios, mano de obra) y normaliza
 // el resultado a una sola forma: unidad/precio quedan en null cuando ese catálogo no los tiene
@@ -2524,11 +2531,11 @@ function buscarEnCatalogos(nombre) {
   const n = String(nombre || '').trim().toLowerCase();
   if (!n) return null;
   const mat = state.catalogo.find(c => c.nombre.trim().toLowerCase() === n);
-  if (mat) return { id: mat.id, nombre: mat.nombre, unidad: mat.unidad, precio: mat.precio, origen: 'material' };
+  if (mat) return { id: mat.id, nombre: mat.nombre, unidad: mat.unidad, precio: mat.precio };
   const serv = state.catalogoServicios.find(c => c.nombre.trim().toLowerCase() === n);
-  if (serv) return { id: serv.id, nombre: serv.nombre, unidad: null, precio: null, origen: 'servicio' };
+  if (serv) return { id: serv.id, nombre: serv.nombre, unidad: null, precio: null };
   const mo = state.catalogoManoObra.find(c => c.nombre.trim().toLowerCase() === n);
-  if (mo) return { id: mo.id, nombre: mo.nombre, unidad: mo.unidad, precio: mo.precio, origen: 'manoObra' };
+  if (mo) return { id: mo.id, nombre: mo.nombre, unidad: mo.unidad, precio: mo.precio };
   return null;
 }
 function resolverOCrearCliente(nombre) {
@@ -2835,9 +2842,8 @@ function toggleColapsoCapitulo(capId) {
 function crearItemVacio() {
   return {
     id: uid('item'), descripcion: '', unidad: 'und', cantidad: 1,
-    modoPrecio: 'directo', precioDirecto: 0, gananciaDirecto: 0, catalogoFiltro: null,
-    trabajadorAsociadoId: null, conceptoAsociadoId: null,
-    apu: { factorMargen: state.empresa.factorMargenDefecto, recursos: [] }
+    precioDirecto: 0, gananciaDirecto: 0, catalogoFiltro: null,
+    trabajadorAsociadoId: null, conceptoAsociadoId: null
   };
 }
 function alternarCatalogoFiltroItem(itemId, filtro) {
@@ -2884,7 +2890,7 @@ function asociarItemATrabajador(itemId, nuevoTrabajadorId) {
   if (nuevoTrabajadorId && cliente) {
     const registro = cliente.manoDeObra.find(r => r.id === nuevoTrabajadorId);
     if (registro) {
-      const concepto = { id: uid('cp'), descripcion: item.descripcion, unidad: item.unidad, cantidad: item.cantidad, precioUnitario: item._pagoTrabajador }; // lo que cuesta su trabajo, nunca el precio con ganancia (ver calcularItem)
+      const concepto = { id: uid('cp'), descripcion: item.descripcion, unidad: item.unidad, cantidad: item.cantidad, precioUnitario: item._precioBase }; // lo que cuesta su trabajo, nunca el precio con ganancia (ver calcularItem)
       registro.conceptos.push(concepto);
       calcularRegistroPersonal(registro);
       item.trabajadorAsociadoId = registro.id;
@@ -2912,7 +2918,7 @@ function sincronizarConceptosAsociados(p) {
     concepto.descripcion = item.descripcion;
     concepto.unidad = item.unidad;
     concepto.cantidad = item.cantidad;
-    concepto.precioUnitario = item._pagoTrabajador; // lo que cuesta su trabajo (ver calcularItem)
+    concepto.precioUnitario = item._precioBase; // lo que cuesta su trabajo (ver calcularItem)
     registrosTocados.add(registro);
   }));
   registrosTocados.forEach(calcularRegistroPersonal);
@@ -2961,34 +2967,6 @@ function cerrarModalItem() {
   document.getElementById('modal-overlay').classList.remove('is-open');
   renderEditor();
 }
-function cambiarModoPrecio(itemId, modo) {
-  const p = presupuestoActivo();
-  const { item } = encontrarItemGlobal(p, itemId);
-  item.modoPrecio = modo;
-  recalcularActivo(); guardar();
-  renderModalItem();
-  // No basta con refrescarNumerosEditor() (solo actualiza texto de nodos ya existentes): cambiar
-  // de modo agrega o quita el renglón "costo: $X" bajo el precio en la tabla, así que la fila
-  // necesita volver a construirse de verdad, igual que crearItem()/eliminarItem().
-  renderEditor();
-}
-function crearRecurso(itemId) {
-  const p = presupuestoActivo();
-  const { item } = encontrarItemGlobal(p, itemId);
-  item.apu.recursos.push({ id: uid('rec'), tipo: 'Material', descripcion: '', unidad: 'und', cantidad: 1, precioUnitario: 0, catalogoId: null });
-  recalcularActivo(); guardar();
-  renderModalItem();
-  refrescarNumerosEditor();
-}
-function eliminarRecurso(recId) {
-  const p = presupuestoActivo();
-  const { item } = encontrarItemGlobal(p, ui.modalItemId);
-  item.apu.recursos = item.apu.recursos.filter(r => r.id !== recId);
-  recalcularActivo(); guardar();
-  renderModalItem();
-  refrescarNumerosEditor();
-}
-
 /* ============================================================
    10. ACCIONES — CATÁLOGO
    ============================================================ */
@@ -3038,8 +3016,6 @@ function aplicarCampo(entidad, id, campo, valor) {
   if (entidad === 'presupuesto') { p[campo] = valor; }
   else if (entidad === 'capitulo') { const c = encontrarCapitulo(p, id); if (c) c[campo] = valor; }
   else if (entidad === 'item') { const f = encontrarItemGlobal(p, id); if (f) f.item[campo] = valor; }
-  else if (entidad === 'apu') { const f = encontrarItemGlobal(p, id); if (f) f.item.apu[campo] = valor; }
-  else if (entidad === 'recurso') { const f = encontrarItemGlobal(p, ui.modalItemId); if (f) { const r = encontrarRecurso(f.item, id); if (r) r[campo] = valor; } }
   else if (entidad === 'aiu') { p.aiu[campo] = valor; }
   else if (entidad === 'catalogo') { const c = encontrarCatalogo(id); if (c) { c[campo] = valor; if (campo === 'precio') c.fechaActualizacion = hoyISO(); } }
   else if (entidad === 'catalogoServicio') { const c = state.catalogoServicios.find(x => x.id === id); if (c) c[campo] = valor; }
@@ -3052,27 +3028,13 @@ function aplicarCampo(entidad, id, campo, valor) {
   else if (entidad === 'empresaAiu') { state.empresa.aiuDefecto[campo] = valor; }
 }
 
-function aplicarCatalogoAResurso(recId, hit) {
-  const p = presupuestoActivo();
-  const { item } = encontrarItemGlobal(p, ui.modalItemId);
-  const r = encontrarRecurso(item, recId);
-  if (!r || !hit) return;
-  r.descripcion = hit.nombre;
-  if (hit.unidad !== null) r.unidad = hit.unidad;
-  if (hit.precio !== null) r.precioUnitario = hit.precio;
-  r.catalogoId = hit.id;
-  // El tipo sigue al catálogo de donde salió, para que el desplegable diga la verdad y el pago al
-  // trabajador cuente bien la mano de obra. Los servicios no tienen un tipo claro: se respeta el que haya.
-  if (hit.origen === 'manoObra') r.tipo = 'Mano de obra';
-  else if (hit.origen === 'material') r.tipo = 'Material';
-}
 function aplicarCatalogoAItem(itemId, hit) {
   const p = presupuestoActivo();
   const { item } = encontrarItemGlobal(p, itemId);
   if (!item || !hit) return;
   item.descripcion = hit.nombre;
   if (hit.unidad !== null) item.unidad = hit.unidad;
-  if (hit.precio !== null && item.modoPrecio === 'directo') item.precioDirecto = hit.precio;
+  if (hit.precio !== null) item.precioDirecto = hit.precio;
 }
 
 /* ============================================================
@@ -3242,7 +3204,7 @@ function renderEditor() {
           ${campoTexto('presupuesto', p.id, 'proyecto', 'Proyecto / Concepto', p.proyecto)}
           ${campoTexto('presupuesto', p.id, 'ubicacion', 'Ubicación', p.ubicacion)}
           ${campoFecha('presupuesto', p.id, 'fecha', 'Fecha', p.fecha)}
-          ${campoNumero('presupuesto', p.id, 'validezDias', 'Validez (días)', p.validezDias)}
+          ${campoNumero('presupuesto', p.id, 'validezDias', 'Validez (días)', p.validezDias, { entero: true })}
           ${campoTexto('presupuesto', p.id, 'plazoEntrega', 'Plazo de entrega', p.plazoEntrega)}
           ${campoTexto('presupuesto', p.id, 'formaPago', 'Forma de pago', p.formaPago)}
           ${campoSelect('presupuesto', p.id, 'estado', 'Estado', p.estado, ESTADOS_PRESUPUESTO)}
@@ -3347,12 +3309,12 @@ function renderItemRow(it, codigoCap, idx, trabajadoresCliente = []) {
         </div>`}
       </td>
       <td><input class="table-input w-unidad" data-entidad="item" data-id="${it.id}" data-campo="unidad" value="${esc(it.unidad)}"></td>
-      <td><input class="table-input w-num" data-entidad="item" data-id="${it.id}" data-campo="cantidad" data-numerico value="${it.cantidad}"></td>
+      <td><input class="table-input w-num" data-entidad="item" data-id="${it.id}" data-campo="cantidad" data-numerico ${atributosCampoNumerico(it.cantidad)}></td>
       <td style="text-align:right">
         <button class="price-btn" data-action="abrir-modal-item" data-id="${it.id}">
-          <span class="price-num" data-price-item="${it.id}">${formatCOP(it._precioUnitario)}</span>${it.modoPrecio === 'apu' ? '<span class="tag-apu">APU</span>' : (numero(it.gananciaDirecto) > 0 ? `<span class="tag-apu" title="Precio con ganancia incluida">+${decimalAPorcentaje(it.gananciaDirecto)}%</span>` : '')}
+          <span class="price-num" data-price-item="${it.id}">${formatCOP(it._precioUnitario)}</span>${numero(it.gananciaDirecto) > 0 ? `<span class="tag-precio" title="Precio con ganancia incluida">+${formatPorcentaje(it.gananciaDirecto)}</span>` : ''}
         </button>
-        ${it.modoPrecio === 'apu' ? `<div class="price-costo-directo" data-costo-item="${it.id}">costo: ${formatCOP(it.apu._costoDirecto)}</div>` : (numero(it.gananciaDirecto) > 0 ? `<div class="price-costo-directo" data-costo-item="${it.id}">costo: ${formatCOP(it._precioBase)}</div>` : '')}
+        ${numero(it.gananciaDirecto) > 0 ? `<div class="price-costo" data-costo-item="${it.id}">costo: ${formatCOP(it._precioBase)}</div>` : ''}
       </td>
       <td class="num" data-total-item="${it.id}">${formatCOP(it._total)}</td>
       <td>
@@ -3377,7 +3339,7 @@ function refrescarNumerosEditor() {
       const priceEl = document.querySelector(`[data-price-item="${it.id}"]`);
       if (priceEl) priceEl.textContent = formatCOP(it._precioUnitario);
       const costoEl = document.querySelector(`[data-costo-item="${it.id}"]`);
-      if (costoEl) costoEl.textContent = `costo: ${formatCOP(it.modoPrecio === 'apu' ? it.apu._costoDirecto : it._precioBase)}`;
+      if (costoEl) costoEl.textContent = `costo: ${formatCOP(it._precioBase)}`;
     });
   });
   ['subtotal', 'admin', 'imprevistos', 'utilidad', 'ivaUtilidad', 'total'].forEach(k => {
@@ -3386,21 +3348,11 @@ function refrescarNumerosEditor() {
   });
   if (ui.modalItemId) {
     const f = encontrarItemGlobal(p, ui.modalItemId);
-    if (f && f.item.modoPrecio === 'directo') {
+    if (f) {
       const pc = document.querySelector('[data-directo-precio-cliente]');
       if (pc) pc.textContent = formatCOP(f.item._precioUnitario);
       const gu = document.querySelector('[data-directo-ganancia-unidad]');
-      if (gu) gu.textContent = formatCOP(f.item._precioUnitario - f.item._precioBase);
-    }
-    if (f && f.item.modoPrecio === 'apu') {
-      f.item.apu.recursos.forEach(r => {
-        const el = document.querySelector(`[data-total-recurso="${r.id}"]`);
-        if (el) el.textContent = formatCOP(r._total);
-      });
-      const cd = document.querySelector('[data-apu-costo-directo]');
-      if (cd) cd.textContent = formatCOP(f.item.apu._costoDirecto);
-      const pr = document.querySelector('[data-apu-precio-resultante]');
-      if (pr) pr.textContent = formatCOP(f.item.apu._precioUnitarioSugerido);
+      if (gu) gu.textContent = formatCOP(redondear(f.item._precioUnitario - f.item._precioBase));
     }
   }
 }
@@ -3433,81 +3385,36 @@ function renderModalItem() {
   if (!f) return;
   const it = f.item;
   const modal = document.getElementById('modal-content');
-  const gananciaPct = Math.round((numero(it.apu.factorMargen) || 0) * 100);
   modal.innerHTML = `
     <div class="modal-head">
       <h3>${esc(it.descripcion) || 'Ítem sin descripción'}</h3>
       <button class="btn btn-icon btn-ghost" data-action="cerrar-modal">✕</button>
     </div>
-    <div class="modo-toggle">
-      <button class="${it.modoPrecio === 'directo' ? 'is-active' : ''}" data-action="modo-directo" data-id="${it.id}">Precio directo</button>
-      <button class="${it.modoPrecio === 'apu' ? 'is-active' : ''}" data-action="modo-apu" data-id="${it.id}">Análisis de precio unitario</button>
-    </div>
-    ${it.modoPrecio === 'directo' ? `
       <div class="field-grid">
         <div class="field">
           <label>Costo</label>
-          <input class="input" style="width:100%;max-width:190px;text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="item" data-id="${it.id}" data-campo="precioDirecto" data-numerico data-formato-cop value="${formatNum(it.precioDirecto)}">
+          <input class="input" style="width:100%;max-width:190px;text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="item" data-id="${it.id}" data-campo="precioDirecto" data-numerico ${atributosCampoNumerico(it.precioDirecto)}>
           <div class="hint" style="margin-top:5px;">Lo que te cuesta a ti. No aparece en el documento.</div>
         </div>
         <div class="field">
           <label>Ganancia</label>
           ${_columnaGananciaDisponible ? `
           <div style="display:flex;align-items:center;gap:8px;">
-            <input class="input w-num" style="width:96px;text-align:right" data-entidad="item" data-id="${it.id}" data-campo="gananciaDirecto" data-porcentaje value="${decimalAPorcentaje(it.gananciaDirecto)}">
+            <input class="input w-num" style="width:96px;text-align:right" data-entidad="item" data-id="${it.id}" data-campo="gananciaDirecto" data-porcentaje ${atributosCampoNumerico(it.gananciaDirecto, { porcentaje: true })}>
             <span style="color:var(--ink-soft);">%</span>
           </div>
           <div class="hint" style="margin-top:5px;">Se suma al costo. El cliente nunca la ve.</div>
           ` : `<div class="hint">Para poder sumar ganancia, falta correr una vez <b>agregar-ganancia-directa.sql</b> en Supabase.</div>`}
         </div>
       </div>
-      <div class="apu-summary">
+      <div class="resumen-precio">
         <div>Precio para el cliente <b data-directo-precio-cliente>${formatCOP(it._precioUnitario)}</b></div>
-        <div>Tu ganancia por unidad <b data-directo-ganancia-unidad>${formatCOP(it._precioUnitario - it._precioBase)}</b></div>
+        <div>Tu ganancia por unidad <b data-directo-ganancia-unidad>${formatCOP(redondear(it._precioUnitario - it._precioBase))}</b></div>
         <div class="hint" style="flex-basis:100%;">El documento impreso muestra solo el precio para el cliente.</div>
       </div>
-    ` : `
-      <div class="table-wrap"><table>
-        <thead><tr><th>Tipo</th><th>Descripción</th><th>Und</th><th class="num">Cant.</th><th class="num">Precio unit.</th><th class="num">Total</th><th></th></tr></thead>
-        <tbody>${it.apu.recursos.map(renderRecursoRow).join('') || `<tr><td colspan="7" style="color:var(--ink-faint);text-align:center;padding:14px;">Sin recursos todavía.</td></tr>`}</tbody>
-      </table></div>
-      <div style="margin-top:10px;"><button class="btn btn-sm" data-action="crear-recurso" data-id="${it.id}">+ Agregar recurso</button></div>
-      <div class="apu-summary">
-        <div>Costo directo <b data-apu-costo-directo>${formatCOP(it.apu._costoDirecto)}</b></div>
-        <div class="field" style="display:inline-flex;flex-direction:row;align-items:center;gap:8px;">
-          <label style="margin:0">Factor de ganancia</label>
-          <input class="input w-num" style="width:70px" data-entidad="apu" data-id="${it.id}" data-campo="factorMargen" data-numerico value="${it.apu.factorMargen}">
-          <span class="hint">(ganancia del ${gananciaPct}% sobre el costo)</span>
-        </div>
-        <div>Precio unitario resultante <b data-apu-precio-resultante>${formatCOP(it.apu._precioUnitarioSugerido)}</b></div>
-      </div>
-    `}
     <div class="modal-foot"><button class="btn btn-primary" data-action="cerrar-modal">Listo</button></div>
   `;
 }
-function catalogoOpcionesPorTipoRecurso(tipo) {
-  if (tipo === 'Material') return state.catalogo.filter(c => c.estado === 'activo');
-  if (tipo === 'Transporte') return state.catalogoServicios;
-  if (tipo === 'Mano de obra') return state.catalogoManoObra;
-  return [...state.catalogo.filter(c => c.estado === 'activo'), ...state.catalogoServicios, ...state.catalogoManoObra];
-}
-function renderRecursoRow(r) {
-  return `
-    <tr data-id="${r.id}">
-      <td>
-        <select class="table-input" data-entidad="recurso" data-id="${r.id}" data-campo="tipo">
-          ${TIPOS_RECURSO.map(t => `<option ${t === r.tipo ? 'selected' : ''}>${t}</option>`).join('')}
-        </select>
-      </td>
-      <td><input class="table-input" style="min-width:190px" autocomplete="off" data-entidad="recurso" data-id="${r.id}" data-campo="descripcion" data-catalogo-target="recurso" value="${esc(r.descripcion)}"></td>
-      <td><input class="table-input w-unidad" data-entidad="recurso" data-id="${r.id}" data-campo="unidad" value="${esc(r.unidad)}"></td>
-      <td><input class="table-input w-num" data-entidad="recurso" data-id="${r.id}" data-campo="cantidad" data-numerico value="${r.cantidad}"></td>
-      <td><input class="table-input w-num" data-entidad="recurso" data-id="${r.id}" data-campo="precioUnitario" data-numerico value="${r.precioUnitario}"></td>
-      <td class="num" data-total-recurso="${r.id}">${formatCOP(r._total)}</td>
-      <td><button class="btn btn-icon btn-danger" data-action="eliminar-recurso" data-id="${r.id}" title="Eliminar">🗑</button></td>
-    </tr>`;
-}
-
 /* ---------- modal de registro de costos de personal ---------- */
 function renderModalPersonal() {
   const r = registroPersonalActivo();
@@ -3531,11 +3438,11 @@ function renderModalPersonal() {
     </table></div>
     <div style="margin-top:10px;"><button class="btn btn-sm" data-action="crear-concepto-personal">+ Agregar concepto</button></div>
 
-    <div class="apu-summary">
+    <div class="resumen-precio">
       <div>Subtotal <b data-personal="subtotal">${formatCOP(r._subtotal)}</b></div>
       <div class="field" style="display:inline-flex;flex-direction:row;align-items:center;gap:8px;">
         <label style="margin:0">Retención</label>
-        <input class="input w-num" style="width:56px" data-entidad="registroPersonal" data-id="${r.id}" data-campo="retencionPorcentaje" data-porcentaje value="${decimalAPorcentaje(r.retencionPorcentaje)}">
+        <input class="input w-num" style="width:56px" data-entidad="registroPersonal" data-id="${r.id}" data-campo="retencionPorcentaje" data-porcentaje ${atributosCampoNumerico(r.retencionPorcentaje, { porcentaje: true })}>
         <span class="hint">% — retiene <b data-personal="retencion">${formatCOP(r._retencion)}</b></span>
       </div>
       <div>Total a pagar <b data-personal="totalXPagar">${formatCOP(r._totalXPagar)}</b></div>
@@ -3588,8 +3495,8 @@ function renderFilaConceptoPersonal(cp) {
     <tr data-id="${cp.id}">
       <td><input class="table-input" style="min-width:190px" data-entidad="conceptoPersonal" data-id="${cp.id}" data-campo="descripcion" value="${esc(cp.descripcion)}" placeholder="Descripción"></td>
       <td><input class="table-input w-unidad" data-entidad="conceptoPersonal" data-id="${cp.id}" data-campo="unidad" value="${esc(cp.unidad)}"></td>
-      <td><input class="table-input w-num" data-entidad="conceptoPersonal" data-id="${cp.id}" data-campo="cantidad" data-numerico value="${cp.cantidad}"></td>
-      <td><input class="table-input w-num" data-entidad="conceptoPersonal" data-id="${cp.id}" data-campo="precioUnitario" data-numerico value="${cp.precioUnitario}"></td>
+      <td><input class="table-input w-num" data-entidad="conceptoPersonal" data-id="${cp.id}" data-campo="cantidad" data-numerico ${atributosCampoNumerico(cp.cantidad)}></td>
+      <td><input class="table-input w-num" data-entidad="conceptoPersonal" data-id="${cp.id}" data-campo="precioUnitario" data-numerico ${atributosCampoNumerico(cp.precioUnitario)}></td>
       <td class="num" data-total-concepto-personal="${cp.id}">${formatCOP(cp._total)}</td>
       <td><button class="btn btn-icon btn-danger" data-action="eliminar-concepto-personal" data-id="${cp.id}" title="Eliminar">🗑</button></td>
     </tr>`;
@@ -3598,7 +3505,7 @@ function renderFilaAnticipoPersonal(a) {
   return `
     <tr data-id="${a.id}">
       <td><input class="table-input" style="min-width:170px" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="descripcion" value="${esc(a.descripcion)}" placeholder="Ej. Anticipo 1"></td>
-      <td><input class="table-input w-num" style="text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="valor" data-numerico data-formato-cop value="${formatNum(a.valor)}"></td>
+      <td><input class="table-input w-num" style="text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="valor" data-numerico ${atributosCampoNumerico(a.valor)}></td>
       <td><input type="date" class="table-input" style="width:135px" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="fecha" value="${esc(a.fecha)}"></td>
       <td><button class="btn btn-icon btn-danger" data-action="eliminar-anticipo-personal" data-id="${a.id}" title="Eliminar">🗑</button></td>
     </tr>`;
@@ -3613,7 +3520,7 @@ function renderFilaAnticipoSupervisor(a) {
   return `
     <tr data-id="${a.id}">
       <td><input class="table-input" style="min-width:170px" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="descripcion" value="${esc(a.descripcion)}" placeholder="Ej. Anticipo 1"></td>
-      <td><input class="table-input w-num" style="text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="valor" data-numerico data-formato-cop value="${formatNum(a.valor)}"></td>
+      <td><input class="table-input w-num" style="text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="valor" data-numerico ${atributosCampoNumerico(a.valor)}></td>
       <td><input type="date" class="table-input" style="width:135px" data-entidad="anticipoPersonal" data-id="${a.id}" data-campo="fecha" value="${esc(a.fecha)}"></td>
       <td><button class="btn btn-icon btn-danger" data-action="eliminar-anticipo-supervisor" data-id="${a.id}" title="Eliminar">🗑</button></td>
     </tr>`;
@@ -3714,8 +3621,8 @@ function renderPanelSupervisor() {
 function campoTexto(entidad, id, campo, etiqueta, valor) {
   return `<div class="field"><label>${etiqueta}</label><input class="input" data-entidad="${entidad}" data-id="${id}" data-campo="${campo}" value="${esc(valor)}"></div>`;
 }
-function campoNumero(entidad, id, campo, etiqueta, valor) {
-  return `<div class="field"><label>${etiqueta}</label><input class="input" data-entidad="${entidad}" data-id="${id}" data-campo="${campo}" data-numerico value="${valor}"></div>`;
+function campoNumero(entidad, id, campo, etiqueta, valor, opciones) {
+  return `<div class="field"><label>${etiqueta}</label><input class="input w-num" data-entidad="${entidad}" data-id="${id}" data-campo="${campo}" data-numerico ${atributosCampoNumerico(valor, opciones)}></div>`;
 }
 function campoFecha(entidad, id, campo, etiqueta, valor) {
   return `<div class="field"><label>${etiqueta}</label><input type="date" class="input" data-entidad="${entidad}" data-id="${id}" data-campo="${campo}" value="${esc(valor)}"></div>`;
@@ -3728,7 +3635,7 @@ function campoSelect(entidad, id, campo, etiqueta, valor, opciones) {
 function campoPorcentaje(entidad, id, campo, etiqueta, valorDecimal) {
   return `<div class="field"><label>${etiqueta}</label>
     <div style="display:flex;align-items:center;gap:6px;">
-      <input class="input w-num" data-entidad="${entidad}" data-id="${id}" data-campo="${campo}" data-porcentaje value="${decimalAPorcentaje(valorDecimal)}">
+      <input class="input w-num" data-entidad="${entidad}" data-id="${id}" data-campo="${campo}" data-porcentaje ${atributosCampoNumerico(valorDecimal, { porcentaje: true })}>
       <span class="hint">%</span>
     </div>
   </div>`;
@@ -3752,7 +3659,7 @@ function renderFilaCatalogoManoObra(c) {
         <tr data-id="${c.id}">
           <td><input class="table-input" style="min-width:260px" data-entidad="catalogoManoObra" data-id="${c.id}" data-campo="nombre" value="${esc(c.nombre)}"></td>
           <td><input class="table-input w-unidad" data-entidad="catalogoManoObra" data-id="${c.id}" data-campo="unidad" value="${esc(c.unidad)}"></td>
-          <td class="num"><input class="table-input" style="text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="catalogoManoObra" data-id="${c.id}" data-campo="precio" data-numerico data-formato-cop value="${formatNum(c.precio)}"></td>
+          <td class="num"><input class="table-input" style="text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="catalogoManoObra" data-id="${c.id}" data-campo="precio" data-numerico ${atributosCampoNumerico(c.precio)}></td>
           <td><button class="btn btn-icon btn-danger" data-action="eliminar-catalogo-mano-obra" data-id="${c.id}" title="Eliminar">🗑</button></td>
         </tr>`;
 }
@@ -3764,7 +3671,7 @@ function renderFilaCatalogoMaterial(c) {
         <td><input class="table-input" style="min-width:200px" data-entidad="catalogo" data-id="${c.id}" data-campo="nombre" value="${esc(c.nombre)}"></td>
         <td><input class="table-input" style="width:140px" data-entidad="catalogo" data-id="${c.id}" data-campo="categoria" value="${esc(c.categoria)}"></td>
         <td><input class="table-input w-unidad" data-entidad="catalogo" data-id="${c.id}" data-campo="unidad" value="${esc(c.unidad)}"></td>
-        <td class="num"><input class="table-input" style="text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="catalogo" data-id="${c.id}" data-campo="precio" data-numerico data-formato-cop value="${formatNum(c.precio)}"></td>
+        <td class="num"><input class="table-input" style="text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="catalogo" data-id="${c.id}" data-campo="precio" data-numerico ${atributosCampoNumerico(c.precio)}></td>
         <td><input class="table-input" style="width:130px" data-entidad="catalogo" data-id="${c.id}" data-campo="proveedor" value="${esc(c.proveedor)}"></td>
         <td><select class="table-input" data-entidad="catalogo" data-id="${c.id}" data-campo="estado">${ESTADOS_CATALOGO.map(e => `<option ${e === c.estado ? 'selected' : ''}>${e}</option>`).join('')}</select></td>
         <td class="mono" style="font-size:.78rem;${viejo ? 'color:var(--amber)' : 'color:var(--ink-faint)'}" title="${viejo ? 'Precio con más de 6 meses sin actualizar' : ''}">${formatFechaCorta(c.fechaActualizacion)}${viejo ? ' ⚠' : ''}</td>
@@ -3871,10 +3778,10 @@ function renderVistaCliente() {
       <div class="doc-summary">
         <div class="row"><span>Subtotal</span><span class="mono">${formatCOP(p._totales.subtotal)}</span></div>
         ${p.aplicaAiu !== false ? `
-        <div class="row"><span>Administración (${Math.round(p.aiu.administracion * 100)}%)</span><span class="mono">${formatCOP(p._totales.admin)}</span></div>
-        <div class="row"><span>Imprevistos (${Math.round(p.aiu.imprevistos * 100)}%)</span><span class="mono">${formatCOP(p._totales.imprevistos)}</span></div>
-        <div class="row"><span>Utilidad (${Math.round(p.aiu.utilidad * 100)}%)</span><span class="mono">${formatCOP(p._totales.utilidad)}</span></div>
-        <div class="row"><span>IVA sobre utilidad (${Math.round(p.ivaSobreUtilidad * 100)}%)</span><span class="mono">${formatCOP(p._totales.ivaUtilidad)}</span></div>
+        <div class="row"><span>Administración (${formatPorcentaje(p.aiu.administracion)})</span><span class="mono">${formatCOP(p._totales.admin)}</span></div>
+        <div class="row"><span>Imprevistos (${formatPorcentaje(p.aiu.imprevistos)})</span><span class="mono">${formatCOP(p._totales.imprevistos)}</span></div>
+        <div class="row"><span>Utilidad (${formatPorcentaje(p.aiu.utilidad)})</span><span class="mono">${formatCOP(p._totales.utilidad)}</span></div>
+        <div class="row"><span>IVA sobre utilidad (${formatPorcentaje(p.ivaSobreUtilidad)})</span><span class="mono">${formatCOP(p._totales.ivaUtilidad)}</span></div>
         ` : ''}
         <div class="row total"><span>Total</span><span class="mono">${formatCOP(p._totales.total)}</span></div>
       </div>
@@ -3910,9 +3817,9 @@ function renderVistaCostosPersonal() {
   const idFiltro = ui.vistaCostosPersonalRegistroId;
   const registroUnico = idFiltro ? (c.manoDeObra.find(r => r.id === idFiltro) || null) : null;
   const registros = idFiltro ? (registroUnico ? [registroUnico] : []) : c.manoDeObra;
-  const totalAPagar = registros.reduce((s, r) => s + r._totalXPagar, 0);
-  const totalAnticipado = registros.reduce((s, r) => s + r._totalAnticipos, 0);
-  const totalPendiente = registros.reduce((s, r) => s + r._saldo, 0);
+  const totalAPagar = redondear(registros.reduce((s, r) => s + r._totalXPagar, 0));
+  const totalAnticipado = redondear(registros.reduce((s, r) => s + r._totalAnticipos, 0));
+  const totalPendiente = redondear(registros.reduce((s, r) => s + r._saldo, 0));
   cont.innerHTML = `
     <div class="doc-sheet">
       <div class="doc-head">
@@ -3943,7 +3850,7 @@ function renderVistaCostosPersonal() {
         </table></div>
         <div class="doc-summary" style="margin-top:6px;">
           <div class="row"><span>Subtotal</span><span class="mono">${formatCOP(r._subtotal)}</span></div>
-          <div class="row"><span>Retención (${Math.round(r.retencionPorcentaje * 100)}%)</span><span class="mono">${formatCOP(r._retencion)}</span></div>
+          <div class="row"><span>Retención (${formatPorcentaje(r.retencionPorcentaje)})</span><span class="mono">${formatCOP(r._retencion)}</span></div>
           <div class="row total"><span>Total a pagar</span><span class="mono">${formatCOP(r._totalXPagar)}</span></div>
         </div>
         ${r.anticipos.length === 0 ? '' : `
@@ -3988,11 +3895,12 @@ function renderVistaCostosPersonal() {
 function calcularEstadisticasDashboard() {
   const totalClientes = state.clientes.length;
   const totalPresupuestos = state.presupuestos.length;
-  const valorTotalCotizado = state.presupuestos.reduce((s, p) => s + numero(p._totales && p._totales.total), 0);
+  const valorTotalCotizado = redondear(state.presupuestos.reduce((s, p) => s + numero(p._totales && p._totales.total), 0));
   const porEstado = { Borrador: 0, Enviado: 0, Aprobado: 0, Rechazado: 0 };
   state.presupuestos.forEach(p => { if (porEstado[p.estado] !== undefined) porEstado[p.estado]++; });
   let saldoPendientePersonal = 0;
   state.clientes.forEach(c => c.manoDeObra.forEach(r => { calcularRegistroPersonal(r); saldoPendientePersonal += r._saldo; }));
+  saldoPendientePersonal = redondear(saldoPendientePersonal);
   const recientes = [...state.presupuestos].sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || ''))).slice(0, 5);
   return { totalClientes, totalPresupuestos, valorTotalCotizado, porEstado, saldoPendientePersonal, recientes };
 }
@@ -4066,7 +3974,7 @@ function renderListadoClientes() {
     <thead><tr><th>Nombre</th><th>Teléfono</th><th>Correo</th><th class="num">Presupuestos</th><th class="num">Costos de personal pendientes</th><th></th></tr></thead>
     <tbody>${items.map(c => {
       c.manoDeObra.forEach(calcularRegistroPersonal);
-      const pendiente = c.manoDeObra.reduce((s, r) => s + r._saldo, 0);
+      const pendiente = redondear(c.manoDeObra.reduce((s, r) => s + r._saldo, 0));
       const numPresupuestos = state.presupuestos.filter(p => p.clienteId === c.id).length;
       return `
       <tr>
@@ -4092,9 +4000,9 @@ function renderEditorCliente() {
   if (!c) { cont.innerHTML = `<div class="empty-state"><p>Selecciona un cliente desde el listado.</p></div>`; return; }
   const presDelCliente = state.presupuestos.filter(p => p.clienteId === c.id);
   c.manoDeObra.forEach(calcularRegistroPersonal);
-  const totalAPagar = c.manoDeObra.reduce((s, r) => s + r._totalXPagar, 0);
-  const totalAnticipado = c.manoDeObra.reduce((s, r) => s + r._totalAnticipos, 0);
-  const totalPendiente = c.manoDeObra.reduce((s, r) => s + r._saldo, 0);
+  const totalAPagar = redondear(c.manoDeObra.reduce((s, r) => s + r._totalXPagar, 0));
+  const totalAnticipado = redondear(c.manoDeObra.reduce((s, r) => s + r._totalAnticipos, 0));
+  const totalPendiente = redondear(c.manoDeObra.reduce((s, r) => s + r._saldo, 0));
 
   cont.innerHTML = `
     <div class="editor-topbar">
@@ -4221,12 +4129,6 @@ function opcionesParaCombobox(el) {
     const f = encontrarItemGlobal(p, el.dataset.id);
     return f ? catalogoOpcionesPorFiltroItem(f.item.catalogoFiltro) : [];
   }
-  if (objetivo === 'recurso') {
-    const f = encontrarItemGlobal(p, ui.modalItemId);
-    if (!f) return [];
-    const r = encontrarRecurso(f.item, el.dataset.id);
-    return r ? catalogoOpcionesPorTipoRecurso(r.tipo) : [];
-  }
   return [];
 }
 function resaltarCoincidencia(texto, consulta) {
@@ -4279,7 +4181,6 @@ function elegirOpcionCombobox(nombre) {
   if (hit) {
     const objetivo = el.dataset.catalogoTarget;
     if (objetivo === 'item') aplicarCatalogoAItem(el.dataset.id, hit);
-    else if (objetivo === 'recurso') aplicarCatalogoAResurso(el.dataset.id, hit);
     recalcularActivo();
     guardar();
   }
@@ -4288,7 +4189,7 @@ function elegirOpcionCombobox(nombre) {
   renderEditor();
 }
 // Decide en cuál de los 3 catálogos crear un elemento nuevo desde el buscador, según el mismo
-// filtro que ya usan catalogoOpcionesPorFiltroItem()/catalogoOpcionesPorTipoRecurso() para decidir
+// filtro que ya usa catalogoOpcionesPorFiltroItem() para decidir
 // qué mostrar. Sin un filtro específico (se está viendo la mezcla de los 3), se crea en
 // materiales por default — el catálogo más usado, y lo que ya asume "+ Agregar elemento" en la
 // propia vista de Catálogo.
@@ -4300,13 +4201,6 @@ function tipoCatalogoParaCombobox(el) {
     const filtro = f && f.item.catalogoFiltro;
     if (filtro === 'servicios') return 'servicios';
     if (filtro === 'manoObra') return 'manoObra';
-    return 'materiales';
-  }
-  if (el.dataset.catalogoTarget === 'recurso') {
-    const f = encontrarItemGlobal(p, ui.modalItemId);
-    const r = f && encontrarRecurso(f.item, el.dataset.id);
-    if (r && r.tipo === 'Transporte') return 'servicios';
-    if (r && r.tipo === 'Mano de obra') return 'manoObra';
     return 'materiales';
   }
   return 'materiales';
@@ -4338,7 +4232,6 @@ function crearCatalogoDesdeCombobox(nombre) {
   }
   const objetivo = el.dataset.catalogoTarget;
   if (objetivo === 'item') aplicarCatalogoAItem(el.dataset.id, hit);
-  else if (objetivo === 'recurso') aplicarCatalogoAResurso(el.dataset.id, hit);
   recalcularActivo();
   guardar();
   cerrarCombobox();
@@ -4951,18 +4844,15 @@ function construirMapasContextoAuditoria() {
   const presupuestoPorId = new Map(state.presupuestos.map(p => [p.id, p]));
   const presupuestoPorCapituloId = new Map();
   const presupuestoPorItemId = new Map();
-  const presupuestoPorRecursoId = new Map();
-  // Un ítem/recurso vive dentro de un capítulo — sin esto, "Creó ítem" (sin descripción todavía,
+  // Un ítem vive dentro de un capítulo — sin esto, "Creó ítem" (sin descripción todavía,
   // p.ej. recién creado vacío) no dice en cuál de los capítulos del presupuesto pasó, que es
   // justo lo que pidió el usuario para tener más claro dónde ocurrió el cambio.
   const capituloNombrePorItemId = new Map();
-  const capituloNombrePorRecursoId = new Map();
   state.presupuestos.forEach(p => p.capitulos.forEach(cap => {
     presupuestoPorCapituloId.set(cap.id, p);
     cap.items.forEach(it => {
       presupuestoPorItemId.set(it.id, p);
       capituloNombrePorItemId.set(it.id, cap.nombre);
-      it.apu.recursos.forEach(r => { presupuestoPorRecursoId.set(r.id, p); capituloNombrePorRecursoId.set(r.id, cap.nombre); });
     });
   }));
   const clienteNombrePorRegistroId = new Map();
@@ -4973,21 +4863,21 @@ function construirMapasContextoAuditoria() {
     r.conceptos.forEach(cp => clienteNombrePorConceptoId.set(cp.id, c.nombre));
     r.anticipos.forEach(an => clienteNombrePorAnticipoId.set(an.id, c.nombre));
   }));
-  return { nombreClientePorId, presupuestoPorId, presupuestoPorCapituloId, presupuestoPorItemId, presupuestoPorRecursoId, capituloNombrePorItemId, capituloNombrePorRecursoId, clienteNombrePorRegistroId, clienteNombrePorConceptoId, clienteNombrePorAnticipoId };
+  return { nombreClientePorId, presupuestoPorId, presupuestoPorCapituloId, presupuestoPorItemId, capituloNombrePorItemId, clienteNombrePorRegistroId, clienteNombrePorConceptoId, clienteNombrePorAnticipoId };
 }
 // Da "Nombre del cliente (COT-000X)" para lo que vive dentro de un presupuesto — sumando
-// "· Capítulo "X"" cuando además se puede saber en cuál capítulo (ítems y recursos de APU) — o
+// "· Capítulo "X"" cuando además se puede saber en cuál capítulo (ítems) — o
 // solo el nombre del cliente para lo que vive dentro de costos de personal. null si la tabla no
 // pertenece a ninguno (catálogos, usuarios, configuración de empresa) o si la fila ya no existe
 // hoy (p.ej. se eliminó).
 function contextoAuditoria(tabla, filaId, mapas) {
-  const conPresupuesto = { presupuestos: mapas.presupuestoPorId, capitulos: mapas.presupuestoPorCapituloId, items: mapas.presupuestoPorItemId, recursos_apu: mapas.presupuestoPorRecursoId };
+  const conPresupuesto = { presupuestos: mapas.presupuestoPorId, capitulos: mapas.presupuestoPorCapituloId, items: mapas.presupuestoPorItemId };
   if (conPresupuesto[tabla]) {
     const p = conPresupuesto[tabla].get(filaId);
     if (!p) return null;
     const nombreCliente = mapas.nombreClientePorId.get(p.clienteId);
     let contexto = nombreCliente ? `${nombreCliente} (${p.numero})` : p.numero;
-    const mapaCapitulo = tabla === 'items' ? mapas.capituloNombrePorItemId : tabla === 'recursos_apu' ? mapas.capituloNombrePorRecursoId : null;
+    const mapaCapitulo = tabla === 'items' ? mapas.capituloNombrePorItemId : null;
     const nombreCapitulo = mapaCapitulo && mapaCapitulo.get(filaId);
     if (nombreCapitulo) contexto += ` · Capítulo "${nombreCapitulo}"`;
     return contexto;
@@ -5087,7 +4977,7 @@ function renderAdminInstrucciones() {
         No hay registro abierto: solo un Admin puede crear cuentas nuevas, desde el engranaje ⚙ → <b>Usuarios</b>. Una vez adentro, todos los usuarios ven la misma información — los roles no ocultan datos entre sí, solo controlan quién puede administrar usuarios y la configuración general.
       </p>
       <h2 style="font-size:1rem;margin-bottom:8px;">Roles actuales</h2>
-      <p style="color:var(--ink-soft);margin-bottom:6px;"><b>Operario</b> — acceso normal: clientes, presupuestos, catálogo y costos de personal. No entra a Configuraciones ni ve la Auditoría, y no puede eliminar un presupuesto completo (sí puede seguir agregando/eliminando capítulos, ítems y recursos dentro de uno).</p>
+      <p style="color:var(--ink-soft);margin-bottom:6px;"><b>Operario</b> — acceso normal: clientes, presupuestos, catálogo y costos de personal. No entra a Configuraciones ni ve la Auditoría, y no puede eliminar un presupuesto completo (sí puede seguir agregando/eliminando capítulos e ítems dentro de uno).</p>
       <p style="color:var(--ink-soft);margin-bottom:6px;"><b>Supervisor</b> — solo ve su propia pantalla de Mano de obra: puede ver (sin editar) el PDF final de los presupuestos de un cliente, y registrar, corregir o eliminar anticipos/pagos de mano de obra. No ve catálogo, configuración ni el editor de presupuestos.</p>
       <p style="color:var(--ink-soft);margin-bottom:20px;"><b>Admin</b> — todo lo anterior, más crear usuarios y cambiarles el rol, ver la auditoría de quién hizo qué, descargar copias de seguridad manuales, y editar la configuración general de la empresa (AIU, IVA y ganancia por defecto).</p>
       <h2 style="font-size:1rem;margin-bottom:8px;">¿Necesitas un rol nuevo o un permiso distinto?</h2>
@@ -5141,7 +5031,6 @@ function renderAdminConfig() {
         ${campoPorcentaje('empresaAiu', '1', 'imprevistos', 'Imprevistos (A.I.U.) %', e.aiuDefecto.imprevistos)}
         ${campoPorcentaje('empresaAiu', '1', 'utilidad', 'Utilidad (A.I.U.) %', e.aiuDefecto.utilidad)}
         ${campoPorcentaje('empresa', '1', 'ivaSobreUtilidadDefecto', 'IVA sobre utilidad %', e.ivaSobreUtilidadDefecto)}
-        ${campoNumero('empresa', '1', 'factorMargenDefecto', 'Factor de ganancia por defecto', e.factorMargenDefecto)}
       </div>
       <div class="field" style="margin-top:14px;">
         <label>Forma de pago por defecto</label>
@@ -5195,10 +5084,6 @@ document.body.addEventListener('click', e => {
       else if (ui.modalPersonalId) cerrarModalPersonal();
       else cerrarModalItem();
     } },
-    'modo-directo': () => cambiarModoPrecio(id, 'directo'),
-    'modo-apu': () => cambiarModoPrecio(id, 'apu'),
-    'crear-recurso': () => crearRecurso(id),
-    'eliminar-recurso': () => eliminarRecurso(id),
     'crear-catalogo': () => {
       if (ui.catalogoSubVista === 'servicios') crearElementoCatalogoServicio();
       else if (ui.catalogoSubVista === 'manoObra') crearElementoCatalogoManoObra();
@@ -5271,6 +5156,7 @@ document.body.addEventListener('input', e => {
   const campo = el.dataset.campo;
   if (!entidad || !campo) return;
   const id = el.dataset.id;
+  if (esCampoNumerico(el)) formatearCampoMientrasSeEscribe(el, e);
   const valor = valorDeCampoDesdeInput(el);
   // Marca de "acá hay texto mío todavía sin guardar": si mientras tanto llega un cambio de otra
   // persona en este mismo campo, el repintado le devuelve lo que esta persona venía escribiendo en
@@ -5322,7 +5208,6 @@ document.body.addEventListener('change', e => {
     if (hit) {
       const objetivo = el.dataset.catalogoTarget;
       if (objetivo === 'item') aplicarCatalogoAItem(el.dataset.id, hit);
-      else if (objetivo === 'recurso') aplicarCatalogoAResurso(el.dataset.id, hit);
       recalcularActivo();
       guardar();
       if (ui.modalItemId) renderModalItem();
@@ -5365,7 +5250,6 @@ document.body.addEventListener('change', e => {
     aplicarCampo(entidad, id, campo, el.value);
     guardar();
     if (entidad === 'presupuesto') renderEditor();
-    else if (entidad === 'recurso') { if (campo === 'tipo') renderModalItem(); }
     else if (entidad === 'catalogo') renderCatalogo();
     return;
   }
@@ -5389,9 +5273,6 @@ document.body.addEventListener('focusout', e => {
       guardarDebounced();
     }
   }
-  // Precios del catálogo con formato de pesos: al salir del campo se vuelve a mostrar formateado
-  // ("33.500"), mientras que mientras se edita se ve el número crudo (ver el focusin de abajo).
-  if (el.dataset.formatoCop !== undefined) { const v = leerCampoCOP(el); if (v !== null) el.value = formatNum(v); }
   if (el === _comboboxInputActivo) cerrarCombobox();
   if (campoIdentidad(el)) transmitirPresencia(null);
 });
@@ -5401,7 +5282,8 @@ document.body.addEventListener('focusout', e => {
 // una opción — si lo perdiera, este mismo focusout cerraría el panel antes de que el click llegue.
 document.body.addEventListener('focusin', e => {
   if (e.target.dataset.catalogoTarget) abrirCombobox(e.target);
-  if (e.target.dataset.formatoCop !== undefined) { const v = leerCampoCOP(e.target); if (v !== null) e.target.value = v; }
+  // punto de partida para reconocer, en la primera tecla, si Retroceso borró solo un punto de miles
+  if (esCampoNumerico(e.target)) e.target._valorPrevio = e.target.value;
   const identidad = campoIdentidad(e.target);
   if (identidad) transmitirPresencia(identidad);
 });
