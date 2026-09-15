@@ -1005,6 +1005,11 @@ function leerCampoCOP(el) {
   const entidad = el.dataset.entidad, id = el.dataset.id, campo = el.dataset.campo;
   if (entidad === 'catalogo') { const c = encontrarCatalogo(id); return c ? numero(c[campo]) : null; }
   if (entidad === 'catalogoManoObra') { const c = state.catalogoManoObra.find(x => x.id === id); return c ? numero(c[campo]) : null; }
+  if (entidad === 'item') {
+    const p = presupuestoActivo();
+    const f = p ? encontrarItemGlobal(p, id) : null;
+    return f ? numero(f.item[campo]) : null;
+  }
   if (entidad === 'anticipoPersonal') {
     const r = registroPersonalActivo();
     const a = r ? r.anticipos.find(x => x.id === id) : null;
@@ -1089,21 +1094,45 @@ function aplanarCapitulos(presupuestos) {
   return filas;
 }
 
+/* La columna items.ganancia_directo solo existe después de correr agregar-ganancia-directa.sql.
+   Mientras no esté, NADA puede dejar de funcionar por eso (ya pasó una vez con el color: pedir una
+   columna que no existía dejó a todos sin poder entrar). Se lee como 0, y al guardar se omite. Si
+   falta, además se desactiva el campo de ganancia en pantalla, para que nunca se pueda imprimir un
+   precio con ganancia que después, al recargar, volvería al costo sin avisar. */
+let _columnaGananciaDisponible = true;
 function filaAObjetoItem(f) {
   return {
     id: f.id, capituloId: f.capitulo_id, descripcion: f.descripcion || '', unidad: f.unidad || 'und', cantidad: numero(f.cantidad),
-    modoPrecio: f.modo_precio || 'directo', precioDirecto: numero(f.precio_directo), catalogoFiltro: f.catalogo_filtro || null,
+    modoPrecio: f.modo_precio || 'directo', precioDirecto: numero(f.precio_directo), gananciaDirecto: numero(f.ganancia_directo), catalogoFiltro: f.catalogo_filtro || null,
     trabajadorAsociadoId: f.trabajador_asociado_id || null, conceptoAsociadoId: f.concepto_asociado_id || null, orden: f.orden ?? 0,
     apu: { factorMargen: f.apu_factor_margen != null ? numero(f.apu_factor_margen) : 0.75, recursos: [] }
   };
 }
 function objetoAFilaItem(it) {
-  return {
+  const fila = {
     id: it.id, capitulo_id: it.capituloId, descripcion: it.descripcion, unidad: it.unidad, cantidad: numero(it.cantidad),
     modo_precio: it.modoPrecio, precio_directo: numero(it.precioDirecto), catalogo_filtro: it.catalogoFiltro || null,
     apu_factor_margen: it.apu ? numero(it.apu.factorMargen) : null,
     trabajador_asociado_id: it.trabajadorAsociadoId || null, concepto_asociado_id: it.conceptoAsociadoId || null, orden: it.orden
   };
+  if (_columnaGananciaDisponible) fila.ganancia_directo = numero(it.gananciaDirecto) || 0;
+  return fila;
+}
+// Sin la columna, la ganancia no se puede guardar: se quita de todos los ítems en memoria (los
+// precios en pantalla vuelven al costo AHORA, a la vista, en vez de volver solos al recargar) y se
+// avisa una sola vez qué archivo falta correr.
+let _avisoGananciaMostrado = false;
+function desactivarGananciaPorFaltaDeColumna() {
+  _columnaGananciaDisponible = false;
+  if (state) {
+    state.presupuestos.forEach(p => { p.capitulos.forEach(c => c.items.forEach(it => { it.gananciaDirecto = 0; })); calcularPresupuesto(p); });
+    if (ui.vista === 'editor-presupuesto') renderEditor();
+    if (ui.modalItemId) renderModalItem();
+  }
+  if (!_avisoGananciaMostrado) {
+    _avisoGananciaMostrado = true;
+    mostrarAviso('La ganancia en precio directo todavía no se puede guardar: falta correr una vez el archivo "agregar-ganancia-directa.sql" en Supabase. Mientras tanto los ítems quedan a precio de costo; el resto del presupuesto se guardó normalmente.');
+  }
 }
 function aplanarItems(presupuestos) {
   const filas = [];
@@ -1238,6 +1267,7 @@ async function cargar() {
   const capitulosPorId = new Map(capitulos.map(c => [c.id, c]));
   capitulos.forEach(c => { const p = presupuestosPorId.get(c.presupuestoId); if (p) p.capitulos.push(c); });
 
+  if ((rItems.data || []).length > 0 && !('ganancia_directo' in rItems.data[0])) _columnaGananciaDisponible = false;
   const items = (rItems.data || []).map(filaAObjetoItem);
   const itemsPorId = new Map(items.map(i => [i.id, i]));
   items.forEach(it => { const c = capitulosPorId.get(it.capituloId); if (c) c.items.push(it); });
@@ -1374,7 +1404,14 @@ async function guardar() {
       await aplicarDiff('anticipos_personal', calcularDiff(aplanarAnticipos(enviado.clientes).map(objetoAFilaAnticipoPersonal), aplanarAnticipos(anterior.clientes).map(objetoAFilaAnticipoPersonal)));
       await aplicarDiff('presupuestos', calcularDiff(enviado.presupuestos.map(objetoAFilaPresupuesto), anterior.presupuestos.map(objetoAFilaPresupuesto)));
       await aplicarDiff('capitulos', calcularDiff(aplanarCapitulos(enviado.presupuestos).map(objetoAFilaCapitulo), aplanarCapitulos(anterior.presupuestos).map(objetoAFilaCapitulo)));
-      await aplicarDiff('items', calcularDiff(aplanarItems(enviado.presupuestos).map(objetoAFilaItem), aplanarItems(anterior.presupuestos).map(objetoAFilaItem)));
+      try {
+        await aplicarDiff('items', calcularDiff(aplanarItems(enviado.presupuestos).map(objetoAFilaItem), aplanarItems(anterior.presupuestos).map(objetoAFilaItem)));
+      } catch (e) {
+        if (!_columnaGananciaDisponible || !String(e.message).includes('ganancia_directo')) throw e;
+        // La base todavía no tiene la columna: se guarda todo lo demás en vez de fallar entero.
+        desactivarGananciaPorFaltaDeColumna();
+        await aplicarDiff('items', calcularDiff(aplanarItems(enviado.presupuestos).map(objetoAFilaItem), aplanarItems(anterior.presupuestos).map(objetoAFilaItem)));
+      }
       await aplicarDiff('recursos_apu', calcularDiff(aplanarRecursos(enviado.presupuestos).map(objetoAFilaRecurso), aplanarRecursos(anterior.presupuestos).map(objetoAFilaRecurso)));
       await aplicarDiff('catalogo_materiales', calcularDiff(enviado.catalogo.map(objetoAFilaCatalogoMaterial), anterior.catalogo.map(objetoAFilaCatalogoMaterial)));
       await aplicarDiff('catalogo_servicios', calcularDiff(enviado.catalogoServicios.map(objetoAFilaCatalogoServicio), anterior.catalogoServicios.map(objetoAFilaCatalogoServicio)));
@@ -2362,10 +2399,47 @@ function calcularApu(apu) {
   apu._precioUnitarioSugerido = redondear(costoDirecto * (1 + factor));
   return apu._precioUnitarioSugerido;
 }
+/* Tres valores por ítem:
+   - `_precioBase`: lo que el ítem cuesta antes de la ganancia oculta de precio directo.
+   - `_precioUnitario`: lo que ve y paga el cliente, y lo único que se imprime.
+   - `_pagoTrabajador`: lo que se le paga al trabajador asociado. La regla del negocio, en palabras
+     del dueño: "si la puesta de un piso me sale en 50.000, al trabajador le pago 50.000 aunque al
+     cliente le suba un 10%". O sea, lo que cuesta SU trabajo, nunca el precio con ganancia:
+       · precio directo → el costo escrito (sin la ganancia).
+       · análisis de precio unitario → solo los recursos de mano de obra. Antes cobraba el precio
+         completo con el factor de ganancia: su trabajo, más los materiales, el transporte y la
+         ganancia del negocio. Si el análisis no tiene ningún recurso de mano de obra, cobra el costo
+         directo (sin ganancia) para no quedar en $0.
+   En precio directo, la ganancia es un porcentaje sobre el costo que se escribe (`gananciaDirecto`,
+   0.30 = 30%). Arranca en 0: todos los ítems que ya existían siguen costando exactamente lo mismo.
+   OJO: NO se reutiliza `apu.factorMargen` para esto a propósito — ese campo ya viene guardado con
+   0.75 en todos los ítems de precio directo (se ignoraba ahí), y aplicarlo habría subido un 75% de
+   golpe todos los presupuestos ya hechos. El análisis de precio unitario no cambia: su ganancia sigue
+   siendo su propio factor sobre los recursos. */
+/* Un recurso es mano de obra si su tipo lo dice, O si viene del catálogo de mano de obra. Lo
+   segundo hace falta porque elegir un recurso del catálogo no le cambiaba el tipo: un recurso nuevo
+   nace como "Material", y un oficial sacado del catálogo de mano de obra se quedaba así si nadie
+   tocaba el desplegable. Mirar de qué catálogo vino corrige también los que ya estaban guardados, sin
+   tener que modificarlos uno por uno. */
+function esRecursoManoDeObra(r) {
+  if (r.tipo === 'Mano de obra') return true;
+  if (!r.catalogoId || !state || !state.catalogoManoObra) return false;
+  return state.catalogoManoObra.some(c => c.id === r.catalogoId);
+}
 function calcularItem(it) {
-  const pu = it.modoPrecio === 'apu' ? calcularApu(it.apu) : redondear(numero(it.precioDirecto));
-  it._precioUnitario = pu;
-  it._total = redondear(numero(it.cantidad) * pu);
+  if (it.modoPrecio === 'apu') {
+    it._precioBase = calcularApu(it.apu);
+    it._precioUnitario = it._precioBase;
+    const manoDeObra = it.apu.recursos.filter(esRecursoManoDeObra);
+    it._pagoTrabajador = manoDeObra.length
+      ? redondear(manoDeObra.reduce((s, r) => s + numero(r._total), 0))
+      : it.apu._costoDirecto;
+  } else {
+    it._precioBase = redondear(numero(it.precioDirecto));
+    it._precioUnitario = redondear(it._precioBase * (1 + (numero(it.gananciaDirecto) || 0)));
+    it._pagoTrabajador = it._precioBase;
+  }
+  it._total = redondear(numero(it.cantidad) * it._precioUnitario);
   return it._total;
 }
 function calcularCapitulo(cap) {
@@ -2450,11 +2524,11 @@ function buscarEnCatalogos(nombre) {
   const n = String(nombre || '').trim().toLowerCase();
   if (!n) return null;
   const mat = state.catalogo.find(c => c.nombre.trim().toLowerCase() === n);
-  if (mat) return { id: mat.id, nombre: mat.nombre, unidad: mat.unidad, precio: mat.precio };
+  if (mat) return { id: mat.id, nombre: mat.nombre, unidad: mat.unidad, precio: mat.precio, origen: 'material' };
   const serv = state.catalogoServicios.find(c => c.nombre.trim().toLowerCase() === n);
-  if (serv) return { id: serv.id, nombre: serv.nombre, unidad: null, precio: null };
+  if (serv) return { id: serv.id, nombre: serv.nombre, unidad: null, precio: null, origen: 'servicio' };
   const mo = state.catalogoManoObra.find(c => c.nombre.trim().toLowerCase() === n);
-  if (mo) return { id: mo.id, nombre: mo.nombre, unidad: mo.unidad, precio: mo.precio };
+  if (mo) return { id: mo.id, nombre: mo.nombre, unidad: mo.unidad, precio: mo.precio, origen: 'manoObra' };
   return null;
 }
 function resolverOCrearCliente(nombre) {
@@ -2761,7 +2835,7 @@ function toggleColapsoCapitulo(capId) {
 function crearItemVacio() {
   return {
     id: uid('item'), descripcion: '', unidad: 'und', cantidad: 1,
-    modoPrecio: 'directo', precioDirecto: 0, catalogoFiltro: null,
+    modoPrecio: 'directo', precioDirecto: 0, gananciaDirecto: 0, catalogoFiltro: null,
     trabajadorAsociadoId: null, conceptoAsociadoId: null,
     apu: { factorMargen: state.empresa.factorMargenDefecto, recursos: [] }
   };
@@ -2810,7 +2884,7 @@ function asociarItemATrabajador(itemId, nuevoTrabajadorId) {
   if (nuevoTrabajadorId && cliente) {
     const registro = cliente.manoDeObra.find(r => r.id === nuevoTrabajadorId);
     if (registro) {
-      const concepto = { id: uid('cp'), descripcion: item.descripcion, unidad: item.unidad, cantidad: item.cantidad, precioUnitario: item._precioUnitario };
+      const concepto = { id: uid('cp'), descripcion: item.descripcion, unidad: item.unidad, cantidad: item.cantidad, precioUnitario: item._pagoTrabajador }; // lo que cuesta su trabajo, nunca el precio con ganancia (ver calcularItem)
       registro.conceptos.push(concepto);
       calcularRegistroPersonal(registro);
       item.trabajadorAsociadoId = registro.id;
@@ -2838,7 +2912,7 @@ function sincronizarConceptosAsociados(p) {
     concepto.descripcion = item.descripcion;
     concepto.unidad = item.unidad;
     concepto.cantidad = item.cantidad;
-    concepto.precioUnitario = item._precioUnitario;
+    concepto.precioUnitario = item._pagoTrabajador; // lo que cuesta su trabajo (ver calcularItem)
     registrosTocados.add(registro);
   }));
   registrosTocados.forEach(calcularRegistroPersonal);
@@ -2987,6 +3061,10 @@ function aplicarCatalogoAResurso(recId, hit) {
   if (hit.unidad !== null) r.unidad = hit.unidad;
   if (hit.precio !== null) r.precioUnitario = hit.precio;
   r.catalogoId = hit.id;
+  // El tipo sigue al catálogo de donde salió, para que el desplegable diga la verdad y el pago al
+  // trabajador cuente bien la mano de obra. Los servicios no tienen un tipo claro: se respeta el que haya.
+  if (hit.origen === 'manoObra') r.tipo = 'Mano de obra';
+  else if (hit.origen === 'material') r.tipo = 'Material';
 }
 function aplicarCatalogoAItem(itemId, hit) {
   const p = presupuestoActivo();
@@ -3272,9 +3350,9 @@ function renderItemRow(it, codigoCap, idx, trabajadoresCliente = []) {
       <td><input class="table-input w-num" data-entidad="item" data-id="${it.id}" data-campo="cantidad" data-numerico value="${it.cantidad}"></td>
       <td style="text-align:right">
         <button class="price-btn" data-action="abrir-modal-item" data-id="${it.id}">
-          <span class="price-num" data-price-item="${it.id}">${formatCOP(it._precioUnitario)}</span>${it.modoPrecio === 'apu' ? '<span class="tag-apu">APU</span>' : ''}
+          <span class="price-num" data-price-item="${it.id}">${formatCOP(it._precioUnitario)}</span>${it.modoPrecio === 'apu' ? '<span class="tag-apu">APU</span>' : (numero(it.gananciaDirecto) > 0 ? `<span class="tag-apu" title="Precio con ganancia incluida">+${decimalAPorcentaje(it.gananciaDirecto)}%</span>` : '')}
         </button>
-        ${it.modoPrecio === 'apu' ? `<div class="price-costo-directo" data-costo-item="${it.id}">costo: ${formatCOP(it.apu._costoDirecto)}</div>` : ''}
+        ${it.modoPrecio === 'apu' ? `<div class="price-costo-directo" data-costo-item="${it.id}">costo: ${formatCOP(it.apu._costoDirecto)}</div>` : (numero(it.gananciaDirecto) > 0 ? `<div class="price-costo-directo" data-costo-item="${it.id}">costo: ${formatCOP(it._precioBase)}</div>` : '')}
       </td>
       <td class="num" data-total-item="${it.id}">${formatCOP(it._total)}</td>
       <td>
@@ -3298,10 +3376,8 @@ function refrescarNumerosEditor() {
       if (totalEl) totalEl.textContent = formatCOP(it._total);
       const priceEl = document.querySelector(`[data-price-item="${it.id}"]`);
       if (priceEl) priceEl.textContent = formatCOP(it._precioUnitario);
-      if (it.modoPrecio === 'apu') {
-        const costoEl = document.querySelector(`[data-costo-item="${it.id}"]`);
-        if (costoEl) costoEl.textContent = `costo: ${formatCOP(it.apu._costoDirecto)}`;
-      }
+      const costoEl = document.querySelector(`[data-costo-item="${it.id}"]`);
+      if (costoEl) costoEl.textContent = `costo: ${formatCOP(it.modoPrecio === 'apu' ? it.apu._costoDirecto : it._precioBase)}`;
     });
   });
   ['subtotal', 'admin', 'imprevistos', 'utilidad', 'ivaUtilidad', 'total'].forEach(k => {
@@ -3310,6 +3386,12 @@ function refrescarNumerosEditor() {
   });
   if (ui.modalItemId) {
     const f = encontrarItemGlobal(p, ui.modalItemId);
+    if (f && f.item.modoPrecio === 'directo') {
+      const pc = document.querySelector('[data-directo-precio-cliente]');
+      if (pc) pc.textContent = formatCOP(f.item._precioUnitario);
+      const gu = document.querySelector('[data-directo-ganancia-unidad]');
+      if (gu) gu.textContent = formatCOP(f.item._precioUnitario - f.item._precioBase);
+    }
     if (f && f.item.modoPrecio === 'apu') {
       f.item.apu.recursos.forEach(r => {
         const el = document.querySelector(`[data-total-recurso="${r.id}"]`);
@@ -3362,9 +3444,27 @@ function renderModalItem() {
       <button class="${it.modoPrecio === 'apu' ? 'is-active' : ''}" data-action="modo-apu" data-id="${it.id}">Análisis de precio unitario</button>
     </div>
     ${it.modoPrecio === 'directo' ? `
-      <div class="field">
-        <label>Precio unitario</label>
-        <input class="input w-num" style="width:160px" data-entidad="item" data-id="${it.id}" data-campo="precioDirecto" data-numerico value="${it.precioDirecto}">
+      <div class="field-grid">
+        <div class="field">
+          <label>Costo</label>
+          <input class="input" style="width:100%;max-width:190px;text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="item" data-id="${it.id}" data-campo="precioDirecto" data-numerico data-formato-cop value="${formatNum(it.precioDirecto)}">
+          <div class="hint" style="margin-top:5px;">Lo que te cuesta a ti. No aparece en el documento.</div>
+        </div>
+        <div class="field">
+          <label>Ganancia</label>
+          ${_columnaGananciaDisponible ? `
+          <div style="display:flex;align-items:center;gap:8px;">
+            <input class="input w-num" style="width:96px;text-align:right" data-entidad="item" data-id="${it.id}" data-campo="gananciaDirecto" data-porcentaje value="${decimalAPorcentaje(it.gananciaDirecto)}">
+            <span style="color:var(--ink-soft);">%</span>
+          </div>
+          <div class="hint" style="margin-top:5px;">Se suma al costo. El cliente nunca la ve.</div>
+          ` : `<div class="hint">Para poder sumar ganancia, falta correr una vez <b>agregar-ganancia-directa.sql</b> en Supabase.</div>`}
+        </div>
+      </div>
+      <div class="apu-summary">
+        <div>Precio para el cliente <b data-directo-precio-cliente>${formatCOP(it._precioUnitario)}</b></div>
+        <div>Tu ganancia por unidad <b data-directo-ganancia-unidad>${formatCOP(it._precioUnitario - it._precioBase)}</b></div>
+        <div class="hint" style="flex-basis:100%;">El documento impreso muestra solo el precio para el cliente.</div>
       </div>
     ` : `
       <div class="table-wrap"><table>
@@ -4688,7 +4788,7 @@ function etiquetaTablaAuditoria(tabla) {
 const AUDITORIA_CAMPOS_OCULTOS = new Set(['catalogo_filtro', 'orden', 'colapsado', 'concepto_asociado_id']);
 const AUDITORIA_ETIQUETAS_CAMPO = {
   nombre: 'Nombre', descripcion: 'Descripción', unidad: 'Unidad', cantidad: 'Cantidad',
-  precio: 'Precio', precio_directo: 'Precio directo', precio_unitario: 'Precio unitario',
+  precio: 'Precio', precio_directo: 'Precio directo', precio_unitario: 'Precio unitario', ganancia_directo: 'Ganancia oculta',
   estado: 'Estado', numero: 'Número', proyecto: 'Proyecto', ubicacion: 'Ubicación',
   fecha: 'Fecha', telefono: 'Teléfono', correo: 'Correo', email: 'Correo',
   direccion: 'Dirección', observaciones: 'Observaciones', proveedor: 'Proveedor',
