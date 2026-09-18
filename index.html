@@ -1937,40 +1937,194 @@ function campoIdentidad(el) {
   return (entidad && campo) ? `${entidad}|${id}|${campo}` : null;
 }
 
-let _presenciaRemota = []; // [{ userId, nombre, campo }] — nunca incluye la propia presencia
+/* ---------- Quién está conectado, y dónde anda cada quien ----------
+   Son DOS cosas que viajan por caminos distintos, a propósito:
 
-/* Dónde estoy yo. Se guarda aparte (`_campoPresenciaPropia`) por dos razones:
+   1. QUIÉN SOY (usuario, nombre, color, id de esta pestaña) va por la Presencia de Supabase, que es
+      la que sabe sola cuándo alguien se conecta o se va. Pero Supabase la limita a 5 actualizaciones
+      cada 30 segundos por cliente, y a la sexta CIERRA EL CANAL ("Client presence rate limit
+      exceeded" — comprobado contra el servidor real). Antes la presencia llevaba también el campo
+      donde uno tenía el cursor, así que bastaba hacer clic en seis campos en medio minuto para que
+      esa pestaña se quedara sin canal: dejaba de anunciar su posición y de mandar sus burbujas hasta
+      que el reintento la levantara. Ese era el origen real de "la posición se pausa" y de "los
+      avisos del supervisor dejan de llegar". Ahora por ahí solo va lo que casi nunca cambia, se
+      manda solo si cambió, y nunca más de 4 veces en cualquier ventana de 30 segundos.
+   2. DÓNDE ESTOY (campo, ubicación) cambia a cada rato, así que va como mensaje suelto ('donde'),
+      que no tiene ese límite. Cada quien guarda el último 'donde' de cada pestaña ajena. Quien se
+      conecta (o se reconecta) lo manda con `pedir: true`, y los demás le contestan con el suyo: así
+      nadie se queda con un dato viejo después de una caída.
+
+   El canal es público (cualquiera con la llave pública de la app puede emitir en él), así que lo que
+   llega se trata como texto ajeno: formato estricto, largos acotados, y nada que pueda romper un
+   selector. Nunca viaja un dato de negocio: ids, nombres y ubicación, lo mismo que ya viajaba antes. */
+let _presenciaIdentidades = [];   // lo que dice la Presencia: [{ userId, nombre, color, sesion }] — nunca me incluye a mí
+const _dondeRemoto = new Map();   // id de pestaña ajena → { campo, ubicacion, ambitoUbicacion, t }
+let _presenciaRemota = [];        // las dos cosas fusionadas: es lo que usa el resto de la app
+
+const CAMPO_REMOTO_VALIDO = /^[\w-]{1,40}\|[\w.:-]{0,80}\|[\w-]{1,40}$/;
+function campoRemotoLimpio(campo) { return (typeof campo === 'string' && CAMPO_REMOTO_VALIDO.test(campo)) ? campo : null; }
+function textoRemotoCorto(t, max) { return typeof t === 'string' ? t.slice(0, max) : ''; }
+function canalListo(canal) { return !!canal && canal.state === 'joined'; }
+// send() y track() devuelven una promesa: si el canal se cae justo en ese instante se rechaza, y sin
+// esto quedaría un error suelto en la consola por algo que ya está previsto (se reintenta solo).
+function sinRechazo(promesa) { if (promesa && typeof promesa.catch === 'function') promesa.catch(() => {}); }
+
+function reconstruirPresenciaRemota() {
+  _presenciaRemota = _presenciaIdentidades.map(p => {
+    const d = (p.sesion && _dondeRemoto.get(p.sesion)) || null;
+    // Sin 'donde' todavía (o una pestaña con la versión anterior de la app, que aún manda el campo
+    // por presencia): se usa lo que traiga la presencia, que es como funcionaba antes.
+    return {
+      userId: p.userId, nombre: p.nombre, color: p.color, sesion: p.sesion || null,
+      campo: d ? d.campo : campoRemotoLimpio(p.campo),
+      ubicacion: d ? d.ubicacion : textoRemotoCorto(p.ubicacion, 160),
+      ambitoUbicacion: d ? d.ambitoUbicacion : (typeof p.ambitoUbicacion === 'string' ? p.ambitoUbicacion : null)
+    };
+  });
+  aplicarPresenciaVisible();
+  renderUsuariosConectados();
+}
+function alSincronizarPresencia(estado) {
+  const todas = Object.values(estado || {}).flat();
+  const conocidas = new Set(_presenciaIdentidades.map(p => p.sesion).filter(Boolean));
+  _presenciaIdentidades = todas.filter(p => p && p.userId && (!ui.usuarioActual || p.userId !== ui.usuarioActual.id));
+  // Una pestaña que aparece por primera vez todavía no sabe dónde estoy: se le cuenta.
+  if (_presenciaIdentidades.some(p => p.sesion && !conocidas.has(p.sesion) && !_dondeRemoto.has(p.sesion))) contestarDonde();
+  // El 'donde' de una pestaña que ya no está se olvida — con un margen, porque su 'donde' puede llegar
+  // un instante antes de que la presencia la liste.
+  const vivas = new Set(_presenciaIdentidades.map(p => p.sesion).filter(Boolean));
+  const ahora = Date.now();
+  [..._dondeRemoto.keys()].forEach(s => { if (!vivas.has(s) && ahora - _dondeRemoto.get(s).t > 90000) _dondeRemoto.delete(s); });
+  reconstruirPresenciaRemota();
+}
+// Contestar "dónde estoy" a pedido (alguien se conectó, o alguien mandó un 'donde' con MI id de pestaña
+// —que solo puede ser ajeno, porque mis propios mensajes no me vuelven—): a lo sumo una vez cada 3 s,
+// para que pedirlo en ráfaga no se convierta en una fábrica de mensajes.
+const DONDE_RESPUESTA_MINIMO_MS = 3000;
+let _dondeUltimaRespuesta = 0;
+let _dondeTemporizadorRespuesta = null;
+function contestarDonde() {
+  const falta = _dondeUltimaRespuesta + DONDE_RESPUESTA_MINIMO_MS - Date.now();
+  if (falta > 0) {
+    if (!_dondeTemporizadorRespuesta) {
+      _dondeTemporizadorRespuesta = setTimeout(() => { _dondeTemporizadorRespuesta = null; contestarDonde(); }, falta);
+      if (typeof _dondeTemporizadorRespuesta.unref === 'function') _dondeTemporizadorRespuesta.unref();
+    }
+    return;
+  }
+  _dondeUltimaRespuesta = Date.now();
+  _dondeContestarPendiente = true;
+  enviarPresenciaAgrupado();
+}
+function recibirDondeRemoto(m) {
+  if (!m || typeof m.o !== 'string' || !m.o || m.o.length > 80) return false;
+  // Mis mensajes no me vuelven: uno con MI id de pestaña es de otro, pisando mi posición en las demás
+  // pantallas. Se ignora, y se repone la verdadera.
+  if (m.o === ID_SESION_CANAL) { contestarDonde(); return false; }
+  // Y nadie habla por una pestaña que la presencia ya conoce con otro usuario.
+  const identidad = _presenciaIdentidades.find(p => p.sesion === m.o);
+  if (identidad && m.u && identidad.userId !== m.u) return false;
+  if (_dondeRemoto.size >= 60 && !_dondeRemoto.has(m.o)) {
+    // Tope de cordura (nunca hay tanta gente): se le hace sitio sacando a alguien que ya no esté
+    // conectado; si todos lo están, este mensaje se descarta.
+    const conectadas = new Set(_presenciaIdentidades.map(p => p.sesion));
+    const sobra = [..._dondeRemoto.keys()].find(s => !conectadas.has(s));
+    if (!sobra) return false;
+    _dondeRemoto.delete(sobra);
+  }
+  _dondeRemoto.set(m.o, {
+    campo: campoRemotoLimpio(m.campo),
+    ubicacion: textoRemotoCorto(m.ubicacion, 160),
+    ambitoUbicacion: typeof m.ambitoUbicacion === 'string' ? m.ambitoUbicacion.slice(0, 40) : null,
+    t: Date.now()
+  });
+  reconstruirPresenciaRemota();
+  // Alguien acaba de conectarse (o de reconectarse) y no sabe dónde anda nadie: se le contesta.
+  if (m.pedir) contestarDonde();
+  return true;
+}
+
+/* Dónde estoy yo. El campo se guarda aparte (`_campoPresenciaPropia`) por dos razones:
    - Pasar de un campo a otro dispara DOS avisos casi al mismo tiempo: el focusout del que dejo
      (campo = null) y el focusin del que tomo. Al mandarse los dos por separado podían llegar en
-     orden invertido y dejar mi posición en "ningún campo" — era el "cuando me voy a otro campo no
-     se actualiza bien mi posición". Ahora se guarda la intención y se manda una sola vez, un
-     instante después: un cambio de campo produce un aviso, no dos que se pelean.
-   - Si la conexión se cae y vuelve, el servidor olvida mi presencia. Al reconectar hay que volver a
-     anunciar el campo donde SIGO estando, no un null — si no, mi posición desaparecía de las otras
-     pantallas y no volvía nunca ("se deja de ver la posición, como que se pausa"). */
+     orden invertido y dejar mi posición en "ningún campo". Ahora se guarda la intención y se manda
+     una sola vez, un instante después: un cambio de campo produce un aviso, no dos que se pelean.
+   - Si la conexión se cae y vuelve, al reconectar hay que volver a anunciar el campo donde SIGO
+     estando, no un null. */
 let _campoPresenciaPropia = null;
-function enviarPresenciaAhora() {
+let _dondeFirmaEnviada = null;
+let _dondeContestarPendiente = false;
+function enviarDondeAhora(forzar, pedir) {
   if (!_canalPresencia || !ui.usuarioActual) return;
-  // La ubicación se calcula en el momento de mandar, no cuando se pidió: así un cambio de pantalla
-  // viaja con el siguiente aviso sin tener que llevar la cuenta por separado.
+  // Se calcula en el momento de mandar, no cuando se pidió: así un cambio de pantalla viaja con el
+  // siguiente aviso sin tener que llevar la cuenta por separado.
   const donde = state ? ubicacionActual() : { texto: '', ambito: null };
-  try {
-    _canalPresencia.track({
-      userId: ui.usuarioActual.id,
-      nombre: ui.usuarioActual.nombre,
-      campo: _campoPresenciaPropia,
-      color: ui.usuarioActual.color,
-      ubicacion: donde.texto,
-      ambitoUbicacion: donde.ambito
-    });
-  } catch (e) {
-    console.warn('No se pudo anunciar la posición:', e);
+  // Sin el canal unido no se manda: send() se iría por HTTP, y al unirse se anuncia todo igual (y el
+  // repaso de cada 2 s lo vuelve a intentar, porque la firma no se actualiza).
+  if (!canalListo(_canalPresencia)) return;
+  const payload = { o: ID_SESION_CANAL, u: ui.usuarioActual.id, campo: _campoPresenciaPropia, ubicacion: donde.texto, ambitoUbicacion: donde.ambito };
+  const firma = JSON.stringify(payload);
+  if (!forzar && firma === _dondeFirmaEnviada) return; // nada cambió: no se gasta un mensaje
+  _dondeFirmaEnviada = firma;
+  if (pedir) payload.pedir = true;
+  try { sinRechazo(_canalPresencia.send({ type: 'broadcast', event: 'donde', payload })); }
+  catch (e) { console.warn('No se pudo anunciar la posición:', e); }
+}
+
+// El tope de Supabase es 5 actualizaciones de presencia cada 30 s (a la sexta cierra el canal). Acá
+// nunca salen más de 4 en cualquier ventana de 30 s: las primeras salen al instante —al reconectar es
+// cuando más importa anunciarse ya—, y solo si se agotan, la siguiente espera su turno.
+const TRACK_MAXIMO_POR_VENTANA = 4;
+const TRACK_VENTANA_MS = 30000;
+let _identidadFirmaEnviada = null;
+let _identidadEnvios = [];        // horas de las últimas actualizaciones de presencia
+let _identidadTemporizador = null;
+function esperaParaOtraActualizacionDePresencia() {
+  const ahora = Date.now();
+  _identidadEnvios = _identidadEnvios.filter(t => ahora - t < TRACK_VENTANA_MS);
+  return _identidadEnvios.length < TRACK_MAXIMO_POR_VENTANA ? 0 : _identidadEnvios[0] + TRACK_VENTANA_MS - ahora + 50;
+}
+function enviarIdentidadAhora(forzar) {
+  if (!_canalPresencia || !ui.usuarioActual) return;
+  const identidad = { userId: ui.usuarioActual.id, nombre: ui.usuarioActual.nombre, color: ui.usuarioActual.color, sesion: ID_SESION_CANAL };
+  const firma = JSON.stringify(identidad);
+  if (!forzar && firma === _identidadFirmaEnviada) return; // la presencia solo se toca cuando de verdad cambió algo
+  if (!canalListo(_canalPresencia)) return; // al unirse el canal se anuncia todo (anunciarmeAlConectar)
+  const falta = esperaParaOtraActualizacionDePresencia();
+  if (falta > 0) {
+    // Se agotaron las de esta ventana: se deja programada (la última gana), no se descarta.
+    clearTimeout(_identidadTemporizador);
+    _identidadTemporizador = setTimeout(() => { _identidadTemporizador = null; enviarIdentidadAhora(forzar); }, falta);
+    if (_identidadTemporizador && typeof _identidadTemporizador.unref === 'function') _identidadTemporizador.unref();
+    return;
   }
+  _identidadFirmaEnviada = firma;
+  _identidadEnvios.push(Date.now());
+  clearTimeout(_identidadTemporizador);
+  _identidadTemporizador = null;
+  try { sinRechazo(_canalPresencia.track(identidad)); }
+  catch (e) { console.warn('No se pudo anunciar la presencia:', e); }
+}
+// Las dos cosas juntas: quién soy (si cambió) y dónde estoy (si cambió). Se puede llamar todas las
+// veces que haga falta: solo manda algo cuando de verdad hay algo nuevo que decir.
+function enviarPresenciaAhora(forzar) {
+  const forzarDonde = forzar === true || _dondeContestarPendiente;
+  _dondeContestarPendiente = false;
+  enviarIdentidadAhora(false);
+  enviarDondeAhora(forzarDonde, false);
 }
 const enviarPresenciaAgrupado = debounce(enviarPresenciaAhora, 120);
 function transmitirPresencia(campo) {
   _campoPresenciaPropia = campo || null;
   enviarPresenciaAgrupado();
+}
+// Recién unido al canal (la primera vez, o después de una caída): el servidor no se acuerda de mí, y
+// yo no sé dónde anda nadie. Me anuncio completo y pido que me contesten.
+function anunciarmeAlConectar() {
+  _identidadFirmaEnviada = null;
+  _dondeFirmaEnviada = null;
+  enviarIdentidadAhora(true);
+  enviarDondeAhora(true, true);
 }
 
 /* ---------- La burbuja de aviso ----------
@@ -2109,7 +2263,9 @@ function aplicarPresenciaVisible() {
   _presenciaRemota.forEach(p => {
     if (!p.campo) return;
     const [entidad, id, campo] = p.campo.split('|');
-    const el = document.querySelector(`[data-entidad="${entidad}"][data-id="${id}"][data-campo="${campo}"]`);
+    let el = null;
+    try { el = document.querySelector(`[data-entidad="${entidad}"][data-id="${id}"][data-campo="${campo}"]`); }
+    catch (e) { return; } // un campo con forma rara nunca puede tumbar este repaso (corre cada 2 s y tras cada repintado)
     if (!el) return; // esa pantalla no está abierta ahora mismo en este navegador — nada que marcar
     const color = colorParaUsuario(p.userId, p.color);
     el.classList.add('presencia-remota');
@@ -2319,14 +2475,24 @@ let _yaEstuvoSuscrito = false;
 function iniciarRealtime() {
   if (_canalDatos) return; // ya conectado — no duplicar la suscripción (p.ej. si esto se llamara dos veces)
 
-  _canalDatos = sb.channel('datos-' + ID_SESION_CANAL);
+  const canalDatos = sb.channel('datos-' + ID_SESION_CANAL);
+  // La librería devuelve el MISMO canal si el anterior con ese nombre todavía no terminó de salir: ese
+  // no se usa (suscribirse a un canal que se está yendo es lo que armaba el bucle de reintentos).
+  if (canalDatos === _canalDatosQuitado) { reintentarCanalDatos(); return; }
+  _canalDatosQuitado = null;
+  _canalDatos = canalDatos;
   Object.keys(REALTIME_TABLAS).forEach(tabla => {
-    _canalDatos.on('postgres_changes', { event: '*', schema: 'public', table: tabla }, manejarCambioRealtime);
+    canalDatos.on('postgres_changes', { event: '*', schema: 'public', table: tabla }, manejarCambioRealtime);
   });
-  _canalDatos.subscribe(estado => {
+  canalDatos.subscribe(estado => {
+    // El 'CLOSED' de un canal que ya fue reemplazado no cuenta: hacerle caso recrearía en bucle el
+    // canal nuevo (ver la misma nota en crearCanalPresencia).
+    if (canalDatos !== _canalDatos) return;
     if (estado === 'SUBSCRIBED') {
       marcarEstadoRealtime(true);
       _esperaReintento = 3000; // conexión sana: la espera del próximo reintento vuelve a empezar corta
+      clearTimeout(_reintentoCanal); // y un reintento que quedó armado ya no hace falta (ver crearCanalPresencia)
+      _reintentoCanal = null;
       // La PRIMERA suscripción no necesita resincronizar (continuarConSesion() acaba de cargar
       // todo). Cualquier siguiente sí: significa que la conexión se cayó y volvió, y nada de lo que
       // pasó mientras estuvo caída se reenvía.
@@ -2346,10 +2512,13 @@ function iniciarRealtime() {
 
   // Autocorrección cada 2s: si algo se volvió a pintar de por medio (una fusión de datos, un
   // guardado propio) y se perdió una marca de presencia, esto la vuelve a poner sin esperar a que
-  // alguien más cambie de campo para que llegue un nuevo evento de sincronización.
+  // alguien más cambie de campo para que llegue un nuevo evento de sincronización. Y se reanuncia
+  // la posición: enviarPresenciaAhora() solo manda algo si de verdad cambió (o si un aviso anterior
+  // no pudo salir porque el canal estaba reconectándose), así que llamarla seguido no cuesta.
   if (!_intervaloPresencia) _intervaloPresencia = setInterval(() => {
     aplicarPresenciaVisible();
     revisarEstadoRealDelCanal();
+    enviarPresenciaAhora();
   }, 2000);
 }
 
@@ -2358,32 +2527,48 @@ function iniciarRealtime() {
 // al otro, y volver a crearlo dejaría una presencia duplicada por cada reintento.
 function crearCanalPresencia() {
   if (_canalPresencia) return;
-  _canalPresencia = sb.channel('presencia-odetta');
-  _canalPresencia.on('presence', { event: 'sync' }, () => {
-    const estado = _canalPresencia.presenceState();
-    _presenciaRemota = Object.values(estado).flat()
-      .filter(p => p.userId && (!ui.usuarioActual || p.userId !== ui.usuarioActual.id))
-      .map(p => ({ userId: p.userId, nombre: p.nombre, campo: p.campo, color: p.color, ubicacion: p.ubicacion, ambitoUbicacion: p.ambitoUbicacion }));
-    aplicarPresenciaVisible();
-    renderUsuariosConectados();
+  const canal = sb.channel('presencia-odetta');
+  // Si la librería devuelve el canal que se acaba de quitar (no terminó de salir), no se usa: se
+  // vuelve a intentar más tarde. Suscribirse a él es justo lo que armaba el bucle.
+  if (canal === _canalPresenciaQuitado) { reintentarCanalPresencia(); return; }
+  _canalPresenciaQuitado = null;
+  _canalPresencia = canal;
+  canal.on('presence', { event: 'sync' }, () => {
+    if (canal !== _canalPresencia) return; // un canal viejo que ya fue reemplazado: lo suyo ya no cuenta
+    alSincronizarPresencia(canal.presenceState());
+  });
+  // Dónde anda cada quien (campo, ubicación): mensaje suelto, no presencia — ver arriba por qué.
+  canal.on('broadcast', { event: 'donde' }, (mensaje) => {
+    if (canal !== _canalPresencia) return;
+    recibirDondeRemoto(mensaje && mensaje.payload);
   });
   // Aviso directo de una sesión a otra: "acabo de guardar algo, revisa". Va por el canal
   // compartido como mensaje suelto (broadcast), sin pasar por la base de datos ni por sus
   // permisos de lectura — y por eso llega igual en los casos donde el aviso normal de la base no
   // llega, que es justo lo que pasaba al BORRAR un anticipo: agregar y modificar se veían al
   // instante, pero un borrado tardaba hasta 20 segundos porque solo lo traía el respaldo.
-  _canalPresencia.on('broadcast', { event: 'datos-cambiaron' }, (mensaje) => {
+  canal.on('broadcast', { event: 'datos-cambiaron' }, (mensaje) => {
+    if (canal !== _canalPresencia) return;
     const aviso = (mensaje && mensaje.payload) || {};
     if (aviso.origen === ID_SESION_CANAL) return; // es mi propio aviso volviendo
     resincronizarPorAviso();
     recibirAvisoDeCambio(aviso);
   });
-  _canalPresencia.subscribe(estado => {
+  canal.subscribe(estado => {
+    /* Al recrear el canal, quitar el viejo le dispara a ÉL un último 'CLOSED'. Si se le hiciera caso,
+       ese aviso programaría otra recreación —que tumbaría el canal nuevo, ya sano—, y así para
+       siempre: un solo hipo de red dejaba el canal recreándose cada pocos segundos el resto de la sesión. */
+    if (canal !== _canalPresencia) return;
     if (estado === 'SUBSCRIBED') {
       _esperaReintentoPresencia = 3000;
-      // Al (re)conectar hay que volver a anunciar el campo donde SIGO estando: el servidor no se
-      // acuerda de mi presencia después de una caída.
-      enviarPresenciaAhora();
+      // Si el canal volvió solo (la librería re-une al reabrir el socket, en ~1,5 s) antes de que el
+      // reintento programado disparara, ese reintento ya no hace falta: si corriera, tumbaría un canal
+      // sano y gastaría una actualización de presencia de las 4 que hay cada 30 s.
+      clearTimeout(_reintentoPresencia);
+      _reintentoPresencia = null;
+      // Al (re)conectar el servidor no se acuerda de mí, y yo no sé dónde anda nadie: me anuncio
+      // completo (incluido el campo donde SIGO estando) y pido que me contesten.
+      anunciarmeAlConectar();
       return;
     }
     console.warn('Realtime: el canal de presencia reportó "' + estado + '".');
@@ -2396,19 +2581,34 @@ function crearCanalPresencia() {
 // sesión — mientras SÍ sigue recibiendo las de los demás. Eso era justo lo que se veía como "los
 // cambios del supervisor dejan de llegarle al admin, pero los del admin siempre llegan": no es el
 // rol, es que el canal de presencia de esa pestaña (la que estaba en segundo plano) se murió callado.
+/* Recrear un canal tiene una trampa, y era la causa de fondo de casi toda la inestabilidad: quitar un
+   canal es ASÍNCRONO (hay que esperar a que el servidor confirme la salida), y mientras tanto la
+   librería de Supabase, si se le pide un canal con el mismo nombre, NO crea uno nuevo: devuelve ESE
+   MISMO que se está yendo. Antes se quitaba y se "creaba" en la misma línea: se terminaba suscribiendo
+   al canal moribundo, que un instante después avisaba 'CLOSED', lo que disparaba otro reintento… y
+   así cada 3 segundos por el resto de la sesión, entrando y saliendo de la presencia sin parar (visto
+   en vivo: más de cien avisos seguidos). Ahora se espera a que el viejo termine de salir, y recién ahí
+   se crea el nuevo. */
+async function quitarCanalDelTodo(canal) {
+  if (!canal) return;
+  let resultado = null;
+  try { resultado = await sb.removeChannel(canal); } catch (e) { /* se sigue igual: abajo se desarma a mano */ }
+  if (resultado !== 'ok' && typeof canal.teardown === 'function') { try { canal.teardown(); } catch (e) { /* idem */ } }
+}
 let _reintentoPresencia = null;
 let _esperaReintentoPresencia = 3000;
+let _canalPresenciaQuitado = null;
 function reintentarCanalPresencia() {
   if (_reintentoPresencia) return;
-  _reintentoPresencia = setTimeout(() => {
-    _reintentoPresencia = null;
+  _reintentoPresencia = setTimeout(async () => {
     _esperaReintentoPresencia = Math.min(_esperaReintentoPresencia * 2, 60000);
-    try {
-      if (_canalPresencia) sb.removeChannel(_canalPresencia);
-      _canalPresencia = null;
-      crearCanalPresencia();
-    } catch (e) {
-      console.error('No se pudo recrear el canal de presencia:', e);
+    const viejo = _canalPresencia || _canalPresenciaQuitado; // si el anterior intento no logró sacarlo del todo, se insiste con ese
+    _canalPresencia = null; // desde ya: lo que avise el canal viejo mientras sale ya no cuenta
+    _canalPresenciaQuitado = viejo;
+    try { await quitarCanalDelTodo(viejo); }
+    finally {
+      _reintentoPresencia = null;
+      try { crearCanalPresencia(); } catch (e) { console.error('No se pudo recrear el canal de presencia:', e); }
     }
   }, _esperaReintentoPresencia);
 }
@@ -2418,17 +2618,20 @@ function reintentarCanalPresencia() {
 // mientras tanto, así que aunque esto tarde, los datos no se quedan viejos.
 let _reintentoCanal = null;
 let _esperaReintento = 3000;
+let _canalDatosQuitado = null;
 function reintentarCanalDatos() {
   if (_reintentoCanal) return; // ya hay un reintento programado
-  _reintentoCanal = setTimeout(() => {
-    _reintentoCanal = null;
+  _reintentoCanal = setTimeout(async () => {
     _esperaReintento = Math.min(_esperaReintento * 2, 60000);
-    try {
-      if (_canalDatos) sb.removeChannel(_canalDatos);
-      _canalDatos = null;
-      iniciarRealtime();
-    } catch (e) {
-      console.error('No se pudo recrear el canal de datos:', e);
+    const viejo = _canalDatos || _canalDatosQuitado; // si el anterior intento no logró sacarlo del todo, se insiste con ese
+    _canalDatos = null; // desde ya: lo que avise el canal viejo mientras sale ya no cuenta
+    _canalDatosQuitado = viejo;
+    // Se ESPERA a que el viejo termine de salir antes de crear el nuevo (ver quitarCanalDelTodo): este
+    // canal lleva siempre el mismo nombre dentro de la sesión, así que tenía la misma trampa.
+    try { await quitarCanalDelTodo(viejo); }
+    finally {
+      _reintentoCanal = null;
+      try { iniciarRealtime(); } catch (e) { console.error('No se pudo recrear el canal de datos:', e); }
     }
   }, _esperaReintento);
 }
