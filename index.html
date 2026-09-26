@@ -201,6 +201,8 @@ main:has([data-view="auditoria"].is-active){ max-width:1400px; }
 
 .tag-precio{ display:inline-flex; font-size:.64rem; font-weight:700; background:var(--teal-soft); color:var(--teal); border-radius:6px; padding:2px 6px; letter-spacing:.03em; }
 
+/* Las filas del catálogo y de categorías ya no son campos: son texto, con sus botones a la derecha. */
+.acciones-fila{ display:flex; gap:2px; justify-content:flex-end; white-space:nowrap; }
 .catalogo-mini-toggle{ display:flex; gap:3px; margin-top:3px; }
 .catalogo-mini-toggle button{
   border:1px solid var(--line-strong); background:var(--surface-2); color:var(--ink-faint);
@@ -299,6 +301,12 @@ th.num{ text-align:right; }
 .chapter-name-input{ flex:1; min-width:120px; border:1px solid transparent; background:transparent; font-family:'Fraunces',serif; font-weight:600; font-size:1rem; padding:5px 8px; border-radius:7px; color:var(--ink); }
 .chapter-name-input:hover{ border-color:var(--line); }
 .chapter-name-input:focus{ border-color:var(--accent); background:var(--surface); box-shadow:0 0 0 3px var(--accent-soft); }
+/* Ganancia del capítulo: va en su encabezado, al lado del subtotal, porque es una decisión del
+   capítulo entero y no de un ítem suelto. */
+.chapter-ganancia{ display:flex; align-items:center; gap:6px; font-size:.76rem; color:var(--ink-soft); white-space:nowrap; }
+.chapter-ganancia .input{ width:64px; text-align:right; padding:5px 7px; font-size:.82rem; }
+.chapter-totales{ display:flex; flex-direction:column; align-items:flex-end; gap:1px; min-width:0; }
+.chapter-costo{ font-size:.7rem; color:var(--ink-faint); white-space:nowrap; font-variant-numeric:tabular-nums; }
 .chapter-subtotal{ font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; font-size:.88rem; font-weight:600; color:var(--accent-strong); white-space:nowrap; }
 .chapter-body{ padding:12px 14px 14px; }
 .chapter-body.is-colapsado{ display:none; }
@@ -723,6 +731,10 @@ body.mostrando-app #contenedor-app{ display:contents; }
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
       <span>Catálogo</span>
     </button>
+    <button class="nav-tab oculto-supervisor" data-action="ir-vista" data-vista="categorias">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 11h18"/></svg>
+      <span>Categorías</span>
+    </button>
     <button class="nav-tab solo-admin" data-action="ir-vista" data-vista="auditoria">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
       <span>Auditoría</span>
@@ -775,6 +787,17 @@ body.mostrando-app #contenedor-app{ display:contents; }
   </section>
 
   <!-- ================= VISTA: CATÁLOGO ================= -->
+  <section data-view="categorias">
+    <div class="view-head">
+      <div>
+        <h1>Categorías</h1>
+        <div class="sub">Las categorías con las que se clasifican los materiales del catálogo.</div>
+      </div>
+      <button class="btn btn-primary" data-action="crear-categoria">+ Nueva categoría</button>
+    </div>
+    <div id="categorias-contenido"></div>
+  </section>
+
   <section data-view="catalogo">
     <div class="view-head">
       <div>
@@ -889,6 +912,10 @@ const CAPITULOS_SUGERIDOS = [
 
 const ESTADOS_PRESUPUESTO = ['Borrador', 'Enviado', 'Aprobado', 'Rechazado'];
 const ESTADOS_CATALOGO = ['activo', 'descontinuado'];
+// Todos los materiales llevan el mismo IVA. Se calcula siempre sobre el precio habitual y se muestra
+// en su propia columna del catálogo: no se guarda en la base (es una cuenta, no un dato que se edite).
+const IVA_MATERIALES = 0.19;
+function ivaDeMaterial(c) { return redondear(numero(c.precio) * IVA_MATERIALES); }
 // Reutiliza los mismos tokens de color de los badges de estado de presupuesto (aprobado/enviado/
 // borrador/rechazado) para los 4 roles — son solo colores, no hace falta CSS nuevo.
 const BADGE_POR_ROL = { admin: 'aprobado', operario: 'enviado', supervisor: 'rechazado', usuario: 'borrador' };
@@ -947,6 +974,9 @@ const ui = {
   filtroClientes: '',
   modalItemId: null,
   modalPersonalId: null,
+  modalCatalogoId: null,
+  modalCatalogoTipo: null,   // 'material' | 'servicio' | 'manoObra'
+  modalCategoriaId: null,
   usuarioActual: null, // { id, email, nombre, rol } — se llena en iniciarApp() tras el login
   adminSubVista: 'usuarios',
   adminUsuarios: [],
@@ -1129,6 +1159,7 @@ function estadoInicial() {
       formaPagoDefecto: '50% anticipo, saldo contra avance de obra'
     },
     catalogo: [],
+    categorias: [],          // las categorías que se gestionan desde su propia área
     catalogoServicios: [],
     catalogoManoObra: [],
     presupuestos: [],
@@ -1141,11 +1172,27 @@ function clonarProfundo(o) { return JSON.parse(JSON.stringify(o)); }
 /* ------------------------------------------------------------
    4A. MAPEADORES fila (Supabase, snake_case) <-> objeto (app, camelCase)
    ------------------------------------------------------------ */
+/* Columnas y tablas que solo existen después de correr el SQL de su entrega. Mientras no estén, NADA
+   puede dejar de funcionar por eso (ya pasó una vez con el color: pedir una columna que no existía
+   dejó a todos sin poder entrar). Se leen como vacío, al guardar se omiten, y se avisa en pantalla
+   qué archivo falta correr — una sola vez, sin bloquear el resto del guardado. */
+let _columnaNitDisponible = true;
+let _columnaGananciaCapituloDisponible = true;
+let _tablaCategoriasDisponible = true;
+const _avisosDeSqlMostrados = new Set();
+function avisarFaltaSql(clave, texto) {
+  if (_avisosDeSqlMostrados.has(clave)) return;
+  _avisosDeSqlMostrados.add(clave);
+  mostrarAviso(texto);
+}
+
 function filaAObjetoCliente(f) {
-  return { id: f.id, nombre: f.nombre || '', personaContacto: f.persona_contacto || '', telefono: f.telefono || '', correo: f.correo || '', direccion: f.direccion || '', observaciones: f.observaciones || '', manoDeObra: [] };
+  return { id: f.id, nombre: f.nombre || '', nit: f.nit || '', personaContacto: f.persona_contacto || '', telefono: f.telefono || '', correo: f.correo || '', direccion: f.direccion || '', observaciones: f.observaciones || '', manoDeObra: [] };
 }
 function objetoAFilaCliente(c) {
-  return { id: c.id, nombre: c.nombre, persona_contacto: c.personaContacto, telefono: c.telefono, correo: c.correo, direccion: c.direccion, observaciones: c.observaciones };
+  const fila = { id: c.id, nombre: c.nombre, persona_contacto: c.personaContacto, telefono: c.telefono, correo: c.correo, direccion: c.direccion, observaciones: c.observaciones };
+  if (_columnaNitDisponible) fila.nit = c.nit || '';
+  return fila;
 }
 
 function filaAObjetoPresupuesto(f) {
@@ -1169,51 +1216,43 @@ function objetoAFilaPresupuesto(p) {
   };
 }
 
-function filaAObjetoCapitulo(f) { return { id: f.id, presupuestoId: f.presupuesto_id, nombre: f.nombre || '', colapsado: !!f.colapsado, orden: f.orden ?? 0, items: [] }; }
-function objetoAFilaCapitulo(c) { return { id: c.id, presupuesto_id: c.presupuestoId, nombre: c.nombre, colapsado: !!c.colapsado, orden: c.orden }; }
+function filaAObjetoCapitulo(f) { return { id: f.id, presupuestoId: f.presupuesto_id, nombre: f.nombre || '', colapsado: !!f.colapsado, ganancia: numero(f.ganancia), orden: f.orden ?? 0, items: [] }; }
+function objetoAFilaCapitulo(c) {
+  const fila = { id: c.id, presupuesto_id: c.presupuestoId, nombre: c.nombre, colapsado: !!c.colapsado, orden: c.orden };
+  if (_columnaGananciaCapituloDisponible) fila.ganancia = numero(c.ganancia) || 0;
+  return fila;
+}
+// Sin la columna, la ganancia del capítulo no se puede guardar: se quita de los capítulos en memoria
+// (los precios vuelven al costo AHORA, a la vista, en vez de volver solos al recargar) y se avisa.
+function desactivarGananciaDeCapituloPorFaltaDeColumna() {
+  _columnaGananciaCapituloDisponible = false;
+  if (state) {
+    state.presupuestos.forEach(p => { p.capitulos.forEach(c => { c.ganancia = 0; }); calcularPresupuesto(p); });
+    if (ui.vista === 'editor-presupuesto') renderEditor();
+  }
+  avisarFaltaSql('ganancia-capitulo', 'La ganancia por capítulo todavía no se puede guardar: falta correr una vez el archivo "cambios-categorias-nit-ganancia.sql" en Supabase. Mientras tanto los capítulos quedan a precio de costo; el resto del presupuesto se guardó normalmente.');
+}
 function aplanarCapitulos(presupuestos) {
   const filas = [];
   presupuestos.forEach(p => p.capitulos.forEach((cap, i) => filas.push({ ...cap, presupuestoId: p.id, orden: i })));
   return filas;
 }
 
-/* La columna items.ganancia_directo solo existe después de correr agregar-ganancia-directa.sql.
-   Mientras no esté, NADA puede dejar de funcionar por eso (ya pasó una vez con el color: pedir una
-   columna que no existía dejó a todos sin poder entrar). Se lee como 0, y al guardar se omite. Si
-   falta, además se desactiva el campo de ganancia en pantalla, para que nunca se pueda imprimir un
-   precio con ganancia que después, al recargar, volvería al costo sin avisar. */
-let _columnaGananciaDisponible = true;
+/* El ítem guarda SOLO su costo. La ganancia ya no va ítem por ítem sino en el capítulo que los
+   agrupa (la columna items.ganancia_directo quedó en la base sin usar, en cero). */
 function filaAObjetoItem(f) {
   return {
     id: f.id, capituloId: f.capitulo_id, descripcion: f.descripcion || '', unidad: f.unidad || 'und', cantidad: numero(f.cantidad),
-    precioDirecto: numero(f.precio_directo), gananciaDirecto: numero(f.ganancia_directo), catalogoFiltro: f.catalogo_filtro || null,
+    precioDirecto: numero(f.precio_directo), catalogoFiltro: f.catalogo_filtro || null,
     trabajadorAsociadoId: f.trabajador_asociado_id || null, conceptoAsociadoId: f.concepto_asociado_id || null, orden: f.orden ?? 0
   };
 }
 function objetoAFilaItem(it) {
-  const fila = {
+  return {
     id: it.id, capitulo_id: it.capituloId, descripcion: it.descripcion, unidad: it.unidad, cantidad: numero(it.cantidad),
     precio_directo: numero(it.precioDirecto), catalogo_filtro: it.catalogoFiltro || null,
     trabajador_asociado_id: it.trabajadorAsociadoId || null, concepto_asociado_id: it.conceptoAsociadoId || null, orden: it.orden
   };
-  if (_columnaGananciaDisponible) fila.ganancia_directo = numero(it.gananciaDirecto) || 0;
-  return fila;
-}
-// Sin la columna, la ganancia no se puede guardar: se quita de todos los ítems en memoria (los
-// precios en pantalla vuelven al costo AHORA, a la vista, en vez de volver solos al recargar) y se
-// avisa una sola vez qué archivo falta correr.
-let _avisoGananciaMostrado = false;
-function desactivarGananciaPorFaltaDeColumna() {
-  _columnaGananciaDisponible = false;
-  if (state) {
-    state.presupuestos.forEach(p => { p.capitulos.forEach(c => c.items.forEach(it => { it.gananciaDirecto = 0; })); calcularPresupuesto(p); });
-    if (ui.vista === 'editor-presupuesto') renderEditor();
-    if (ui.modalItemId) renderModalItem();
-  }
-  if (!_avisoGananciaMostrado) {
-    _avisoGananciaMostrado = true;
-    mostrarAviso('La ganancia en precio directo todavía no se puede guardar: falta correr una vez el archivo "agregar-ganancia-directa.sql" en Supabase. Mientras tanto los ítems quedan a precio de costo; el resto del presupuesto se guardó normalmente.');
-  }
 }
 function aplanarItems(presupuestos) {
   const filas = [];
@@ -1248,6 +1287,15 @@ function aplanarAnticipos(clientes) {
 function filaAObjetoCatalogoMaterial(f) { return { id: f.id, nombre: f.nombre || '', categoria: f.categoria || '', unidad: f.unidad || '', precio: numero(f.precio), proveedor: f.proveedor || '', estado: f.estado || 'activo', fechaActualizacion: f.fecha_actualizacion || hoyISO(), observaciones: f.observaciones || '' }; }
 function objetoAFilaCatalogoMaterial(c) { return { id: c.id, nombre: c.nombre, categoria: c.categoria, unidad: c.unidad, precio: numero(c.precio), proveedor: c.proveedor, estado: c.estado, fecha_actualizacion: c.fechaActualizacion || null, observaciones: c.observaciones }; }
 
+// Las categorías viven en su propia área (hoy las de materiales; el campo `tipo` deja lugar para las
+// que vayan surgiendo). `orden` manda el orden en que se muestran; con el mismo orden, por nombre.
+function filaAObjetoCategoria(f) { return { id: f.id, tipo: f.tipo || 'material', nombre: f.nombre || '', orden: f.orden ?? 0 }; }
+function objetoAFilaCategoria(c) { return { id: c.id, tipo: c.tipo || 'material', nombre: c.nombre, orden: c.orden ?? 0 }; }
+function categoriasDeMateriales() {
+  return state.categorias
+    .filter(c => (c.tipo || 'material') === 'material')
+    .sort((a, b) => (a.orden - b.orden) || String(a.nombre).localeCompare(String(b.nombre), 'es'));
+}
 function filaAObjetoCatalogoServicio(f) { return { id: f.id, nombre: f.nombre || '' }; }
 function objetoAFilaCatalogoServicio(c) { return { id: c.id, nombre: c.nombre }; }
 
@@ -1315,11 +1363,15 @@ async function cargar() {
     sb.from('catalogo_materiales').select('*').order('id'),
     sb.from('catalogo_servicios').select('*').order('id'),
     sb.from('catalogo_mano_obra').select('*').order('id'),
-    sb.from('empresa_config').select('*').eq('id', 1).maybeSingle()
+    sb.from('empresa_config').select('*').eq('id', 1).maybeSingle(),
+    sb.from('categorias').select('*').order('orden')
   ]);
-  const [rClientes, rRegistros, rConceptos, rAnticipos, rPresupuestos, rCapitulos, rItems, rCatMateriales, rCatServicios, rCatManoObra, rEmpresa] = consultas;
-  const conError = consultas.find(r => r.error);
+  const [rClientes, rRegistros, rConceptos, rAnticipos, rPresupuestos, rCapitulos, rItems, rCatMateriales, rCatServicios, rCatManoObra, rEmpresa, rCategorias] = consultas;
+  // La tabla de categorías solo existe después de correr el SQL de esta entrega: si falta, la app
+  // entra igual (sin categorías) en vez de quedarse sin cargar — que sería dejar a todos afuera.
+  const conError = consultas.filter(r => r !== rCategorias).find(r => r.error);
   if (conError) throw new Error('No se pudo cargar la información desde Supabase: ' + conError.error.message);
+  if (rCategorias.error) _tablaCategoriasDisponible = false;
 
   const clientes = (rClientes.data || []).map(filaAObjetoCliente);
   const clientesPorId = new Map(clientes.map(c => [c.id, c]));
@@ -1334,11 +1386,12 @@ async function cargar() {
   const presupuestos = (rPresupuestos.data || []).map(filaAObjetoPresupuesto);
   const presupuestosPorId = new Map(presupuestos.map(p => [p.id, p]));
 
+  if ((rClientes.data || []).length > 0 && !('nit' in rClientes.data[0])) _columnaNitDisponible = false;
+  if ((rCapitulos.data || []).length > 0 && !('ganancia' in rCapitulos.data[0])) _columnaGananciaCapituloDisponible = false;
   const capitulos = (rCapitulos.data || []).map(filaAObjetoCapitulo);
   const capitulosPorId = new Map(capitulos.map(c => [c.id, c]));
   capitulos.forEach(c => { const p = presupuestosPorId.get(c.presupuestoId); if (p) p.capitulos.push(c); });
 
-  if ((rItems.data || []).length > 0 && !('ganancia_directo' in rItems.data[0])) _columnaGananciaDisponible = false;
   const items = (rItems.data || []).map(filaAObjetoItem);
   const itemsPorId = new Map(items.map(i => [i.id, i]));
   items.forEach(it => { const c = capitulosPorId.get(it.capituloId); if (c) c.items.push(it); });
@@ -1348,6 +1401,7 @@ async function cargar() {
   state.clientes = clientes;
   state.presupuestos = presupuestos;
   state.catalogo = (rCatMateriales.data || []).map(filaAObjetoCatalogoMaterial);
+  state.categorias = (rCategorias.data || []).map(filaAObjetoCategoria);
   state.catalogoServicios = (rCatServicios.data || []).map(filaAObjetoCatalogoServicio);
   state.catalogoManoObra = (rCatManoObra.data || []).map(filaAObjetoCatalogoManoObra);
   if (rEmpresa.data) state.empresa = filaAObjetoEmpresa(rEmpresa.data);
@@ -1468,19 +1522,37 @@ async function guardar() {
     // del plan gratis despertando, conexión caída a mitad de camino), esto se rechaza como cualquier
     // otro error de red en vez de dejar "Guardando…" pegado para siempre — ver conTiempoLimite().
     await conTiempoLimite((async () => {
-      await aplicarDiff('clientes', calcularDiff(enviado.clientes.map(objetoAFilaCliente), anterior.clientes.map(objetoAFilaCliente)));
+      try {
+        await aplicarDiff('clientes', calcularDiff(enviado.clientes.map(objetoAFilaCliente), anterior.clientes.map(objetoAFilaCliente)));
+      } catch (e) {
+        if (!_columnaNitDisponible || !String(e.message).includes('nit')) throw e;
+        // La base todavía no tiene la columna del NIT: se guarda el resto del cliente igual.
+        _columnaNitDisponible = false;
+        avisarFaltaSql('nit', 'El NIT todavía no se puede guardar: falta correr una vez el archivo "cambios-categorias-nit-ganancia.sql" en Supabase. El resto de los datos del cliente se guardó normalmente.');
+        await aplicarDiff('clientes', calcularDiff(enviado.clientes.map(objetoAFilaCliente), anterior.clientes.map(objetoAFilaCliente)));
+      }
       await aplicarDiff('registros_personal', calcularDiff(aplanarRegistros(enviado.clientes).map(objetoAFilaRegistroPersonal), aplanarRegistros(anterior.clientes).map(objetoAFilaRegistroPersonal)));
       await aplicarDiff('conceptos_personal', calcularDiff(aplanarConceptos(enviado.clientes).map(objetoAFilaConceptoPersonal), aplanarConceptos(anterior.clientes).map(objetoAFilaConceptoPersonal)));
       await aplicarDiff('anticipos_personal', calcularDiff(aplanarAnticipos(enviado.clientes).map(objetoAFilaAnticipoPersonal), aplanarAnticipos(anterior.clientes).map(objetoAFilaAnticipoPersonal)));
       await aplicarDiff('presupuestos', calcularDiff(enviado.presupuestos.map(objetoAFilaPresupuesto), anterior.presupuestos.map(objetoAFilaPresupuesto)));
-      await aplicarDiff('capitulos', calcularDiff(aplanarCapitulos(enviado.presupuestos).map(objetoAFilaCapitulo), aplanarCapitulos(anterior.presupuestos).map(objetoAFilaCapitulo)));
       try {
-        await aplicarDiff('items', calcularDiff(aplanarItems(enviado.presupuestos).map(objetoAFilaItem), aplanarItems(anterior.presupuestos).map(objetoAFilaItem)));
+        await aplicarDiff('capitulos', calcularDiff(aplanarCapitulos(enviado.presupuestos).map(objetoAFilaCapitulo), aplanarCapitulos(anterior.presupuestos).map(objetoAFilaCapitulo)));
       } catch (e) {
-        if (!_columnaGananciaDisponible || !String(e.message).includes('ganancia_directo')) throw e;
+        if (!_columnaGananciaCapituloDisponible || !String(e.message).includes('ganancia')) throw e;
         // La base todavía no tiene la columna: se guarda todo lo demás en vez de fallar entero.
-        desactivarGananciaPorFaltaDeColumna();
-        await aplicarDiff('items', calcularDiff(aplanarItems(enviado.presupuestos).map(objetoAFilaItem), aplanarItems(anterior.presupuestos).map(objetoAFilaItem)));
+        desactivarGananciaDeCapituloPorFaltaDeColumna();
+        await aplicarDiff('capitulos', calcularDiff(aplanarCapitulos(enviado.presupuestos).map(objetoAFilaCapitulo), aplanarCapitulos(anterior.presupuestos).map(objetoAFilaCapitulo)));
+      }
+      await aplicarDiff('items', calcularDiff(aplanarItems(enviado.presupuestos).map(objetoAFilaItem), aplanarItems(anterior.presupuestos).map(objetoAFilaItem)));
+      if (_tablaCategoriasDisponible) {
+        try {
+          await aplicarDiff('categorias', calcularDiff(enviado.categorias.map(objetoAFilaCategoria), anterior.categorias.map(objetoAFilaCategoria)));
+        } catch (e) {
+          if (!/categorias/i.test(String(e.message)) || !/does not exist|no existe|schema cache/i.test(String(e.message))) throw e;
+          // La base todavía no tiene la tabla: se guarda todo lo demás en vez de fallar entero.
+          _tablaCategoriasDisponible = false;
+          avisarFaltaSql('tabla-categorias', 'Las categorías todavía no se pueden guardar: falta correr una vez el archivo "cambios-categorias-nit-ganancia.sql" en Supabase. El resto se guardó normalmente.');
+        }
       }
       await aplicarDiff('catalogo_materiales', calcularDiff(enviado.catalogo.map(objetoAFilaCatalogoMaterial), anterior.catalogo.map(objetoAFilaCatalogoMaterial)));
       await aplicarDiff('catalogo_servicios', calcularDiff(enviado.catalogoServicios.map(objetoAFilaCatalogoServicio), anterior.catalogoServicios.map(objetoAFilaCatalogoServicio)));
@@ -1676,6 +1748,10 @@ function fusionarCatalogoMaterial(evento, fila) {
   fusionarEnLista(state.catalogo, evento, filaAObjetoCatalogoMaterial(fila));
   fusionarEnLista(_ultimoEstadoSincronizado.catalogo, evento, filaAObjetoCatalogoMaterial(fila));
 }
+function fusionarCategoria(evento, fila) {
+  fusionarEnLista(state.categorias, evento, filaAObjetoCategoria(fila));
+  fusionarEnLista(_ultimoEstadoSincronizado.categorias, evento, filaAObjetoCategoria(fila));
+}
 function fusionarCatalogoServicio(evento, fila) {
   fusionarEnLista(state.catalogoServicios, evento, filaAObjetoCatalogoServicio(fila));
   fusionarEnLista(_ultimoEstadoSincronizado.catalogoServicios, evento, filaAObjetoCatalogoServicio(fila));
@@ -1700,6 +1776,7 @@ const REALTIME_TABLAS = {
   conceptos_personal: fusionarConceptoPersonal,
   anticipos_personal: fusionarAnticipoPersonal,
   catalogo_materiales: fusionarCatalogoMaterial,
+  categorias: fusionarCategoria,
   catalogo_servicios: fusionarCatalogoServicio,
   catalogo_mano_obra: fusionarCatalogoManoObra,
   empresa_config: fusionarEmpresa
@@ -1799,6 +1876,7 @@ const VISTAS_REALTIME_SOLO_LECTURA = {
   // personal), que dependen de los conceptos y los anticipos, no solo del registro: antes escuchaban
   // únicamente registros_personal, así que un anticipo agregado por otra persona no movía esos
   // números aunque se estuviera mirando la pantalla en ese momento.
+  'categorias': { tablas: ['categorias', 'catalogo_materiales'], render: () => renderVistaCategorias() },
   'listado-clientes': { tablas: ['clientes', 'presupuestos', ...TABLAS_PERSONAL], render: () => renderListadoClientes() },
   'dashboard': { tablas: ['presupuestos', 'clientes', ...TABLAS_PERSONAL], render: () => renderVistaDashboard() }
 };
@@ -2199,6 +2277,7 @@ const UBICACIONES = {
   'dashboard': { texto: 'Inicio', ambito: 'presupuestos' },
   'listado-clientes': { texto: 'Clientes', ambito: 'clientes' },
   'catalogo': { texto: 'Catálogo', ambito: 'catalogo' },
+  'categorias': { texto: 'Categorías', ambito: 'catalogo' },
   'vista-costos-personal': { texto: 'Costos de personal', ambito: 'mano-de-obra' },
   'panel-supervisor': { texto: 'Mano de obra', ambito: 'mano-de-obra' },
   'admin': { texto: 'Configuraciones', ambito: 'configuracion' },
@@ -2328,7 +2407,7 @@ const AMBITO_POR_TABLA = {
   registros_personal: 'mano-de-obra', conceptos_personal: 'mano-de-obra', anticipos_personal: 'mano-de-obra',
   clientes: 'clientes',
   presupuestos: 'presupuestos', capitulos: 'presupuestos', items: 'presupuestos',
-  catalogo_materiales: 'catalogo', catalogo_servicios: 'catalogo', catalogo_mano_obra: 'catalogo',
+  catalogo_materiales: 'catalogo', catalogo_servicios: 'catalogo', catalogo_mano_obra: 'catalogo', categorias: 'catalogo',
   empresa_config: 'configuracion'
 };
 const AMBITOS_POR_ROL = {
@@ -2639,22 +2718,25 @@ function reintentarCanalDatos() {
 /* ============================================================
    5. MOTOR DE CÁLCULO
    ============================================================ */
-/* Dos precios por ítem:
-   - `_precioBase`: el costo que se escribe. Es también lo que se le paga a un trabajador asociado.
-     Regla del dueño: "si la puesta de un piso me sale en 50.000, al trabajador le pago 50.000 aunque
-     al cliente le suba un 10%" — lo que cuesta su trabajo, nunca el precio con ganancia.
-   - `_precioUnitario`: costo + % de ganancia (`gananciaDirecto`, 0.30 = 30%). Es lo que ve y paga el
-     cliente, y lo único que se imprime.
-   (Antes existía además el "análisis de precio unitario", armado con recursos y un factor de
-   ganancia. Se retiró por completo: no le servía al negocio y confundía.) */
-function calcularItem(it) {
+/* La ganancia se pone UNA vez por capítulo, sobre lo que cuesta todo el capítulo (antes se ponía
+   ítem por ítem). Dentro del capítulo, ese porcentaje se reparte parejo entre sus ítems:
+   - `_precioBase`: el costo que se escribe en el ítem. Es también lo que se le paga a un trabajador
+     asociado. Regla del dueño: "si la puesta de un piso me sale en 50.000, al trabajador le pago
+     50.000 aunque al cliente le suba un 10%" — lo que cuesta su trabajo, nunca el precio con ganancia.
+   - `_precioUnitario`: ese costo con la ganancia del capítulo ya incluida. Es lo que ve y paga el
+     cliente, y lo único que se imprime: repartirla dentro de los precios unitarios es lo que hace
+     que el documento no delate cuánto se está ganando. */
+function calcularItem(it, gananciaCapitulo) {
   it._precioBase = redondear(numero(it.precioDirecto));
-  it._precioUnitario = redondear(it._precioBase * (1 + (numero(it.gananciaDirecto) || 0)));
+  it._precioUnitario = redondear(it._precioBase * (1 + (numero(gananciaCapitulo) || 0)));
   it._total = redondear(numero(it.cantidad) * it._precioUnitario);
   return it._total;
 }
 function calcularCapitulo(cap) {
-  cap._subtotal = redondear(cap.items.reduce((s, it) => s + calcularItem(it), 0));
+  const ganancia = numero(cap.ganancia) || 0;
+  cap._costo = redondear(cap.items.reduce((s, it) => s + redondear(numero(it.cantidad) * redondear(numero(it.precioDirecto))), 0));
+  cap._subtotal = redondear(cap.items.reduce((s, it) => s + calcularItem(it, ganancia), 0));
+  cap._ganancia = redondear(cap._subtotal - cap._costo);
   return cap._subtotal;
 }
 function calcularPresupuesto(p) {
@@ -2900,7 +2982,7 @@ async function eliminarPresupuesto(id) {
    7B. ACCIONES — CLIENTES Y MANO DE OBRA
    ============================================================ */
 function crearClienteVacio(nombre) {
-  return { id: uid('cli'), nombre: nombre || 'Nuevo cliente', personaContacto: '', telefono: '', correo: '', direccion: '', observaciones: '', manoDeObra: [] };
+  return { id: uid('cli'), nombre: nombre || 'Nuevo cliente', nit: '', personaContacto: '', telefono: '', correo: '', direccion: '', observaciones: '', manoDeObra: [] };
 }
 function crearCliente() {
   const c = crearClienteVacio('Nuevo cliente');
@@ -3001,7 +3083,7 @@ function eliminarAnticipoPersonal(id) {
 function crearCapitulo(nombre) {
   const p = presupuestoActivo();
   if (!p) return;
-  p.capitulos.push({ id: uid('cap'), nombre: nombre || 'Nuevo capítulo', colapsado: false, items: [] });
+  p.capitulos.push({ id: uid('cap'), nombre: nombre || 'Nuevo capítulo', colapsado: false, ganancia: 0, items: [] });
   recalcularActivo(); guardar(); renderEditor();
 }
 function usarCapitulosSugeridos() {
@@ -3045,7 +3127,7 @@ function toggleColapsoCapitulo(capId) {
 function crearItemVacio() {
   return {
     id: uid('item'), descripcion: '', unidad: 'und', cantidad: 1,
-    precioDirecto: 0, gananciaDirecto: 0, catalogoFiltro: null,
+    precioDirecto: 0, catalogoFiltro: null,
     trabajadorAsociadoId: null, conceptoAsociadoId: null
   };
 }
@@ -3174,11 +3256,13 @@ function cerrarModalItem() {
    10. ACCIONES — CATÁLOGO
    ============================================================ */
 function crearElementoCatalogo() {
-  state.catalogo.unshift({
-    id: uid('cat'), nombre: 'Nuevo material', categoria: 'Materiales', unidad: 'und',
+  const m = {
+    id: uid('cat'), nombre: 'Nuevo material', categoria: '', unidad: 'und',
     precio: 0, proveedor: '', estado: 'activo', fechaActualizacion: hoyISO(), observaciones: ''
-  });
+  };
+  state.catalogo.unshift(m);
   guardar(); renderCatalogo();
+  abrirModalCatalogo('material', m.id); // se abre listo para ponerle nombre, categoría y precio
 }
 async function eliminarElementoCatalogo(id) {
   const c = encontrarCatalogo(id);
@@ -3188,8 +3272,10 @@ async function eliminarElementoCatalogo(id) {
   guardar(); renderCatalogo();
 }
 function crearElementoCatalogoServicio() {
-  state.catalogoServicios.unshift({ id: uid('serv'), nombre: 'Nuevo servicio' });
+  const m = { id: uid('serv'), nombre: 'Nuevo servicio' };
+  state.catalogoServicios.unshift(m);
   guardar(); renderCatalogo();
+  abrirModalCatalogo('servicio', m.id);
 }
 async function eliminarElementoCatalogoServicio(id) {
   const c = state.catalogoServicios.find(x => x.id === id);
@@ -3202,6 +3288,7 @@ function crearElementoCatalogoManoObra() {
   const m = { id: uid('mocat'), nombre: 'Nueva labor', unidad: 'und', precio: 0 };
   state.catalogoManoObra.unshift(m);
   guardar(); renderCatalogo();
+  abrirModalCatalogo('manoObra', m.id);
 }
 async function eliminarElementoCatalogoManoObra(id) {
   const c = state.catalogoManoObra.find(x => x.id === id);
@@ -3335,6 +3422,7 @@ function renderVistaActual() {
   const nombre = ui.vista;
   if (nombre === 'editor-presupuesto') renderEditor();
   else if (nombre === 'catalogo') renderCatalogo();
+  else if (nombre === 'categorias') renderVistaCategorias();
   else if (nombre === 'vista-cliente') renderVistaCliente();
   else if (nombre === 'vista-costos-personal') renderVistaCostosPersonal();
   else if (nombre === 'listado-clientes') renderListadoClientes();
@@ -3374,6 +3462,11 @@ function restaurarUltimaVista() {
 /* ============================================================
    13. UTILIDAD — PRESUPUESTO ↔ CLIENTE
    ============================================================ */
+// El NIT sale junto al nombre del cliente en lo impreso, solo si está lleno.
+function nitDelPresupuesto(p) {
+  const c = p ? encontrarCliente(p.clienteId) : null;
+  return c ? (c.nit || '') : '';
+}
 function nombreClienteDePresupuesto(p) {
   return (p.clienteId && encontrarCliente(p.clienteId)?.nombre) || '';
 }
@@ -3460,6 +3553,11 @@ function renderEditor() {
   `;
 }
 
+// Debajo del subtotal del capítulo, en chiquito: qué parte es costo y qué parte es ganancia. Solo
+// cuando hay ganancia puesta — si no, el subtotal ES el costo y repetirlo sobra.
+function textoCostoDeCapitulo(cap) {
+  return numero(cap.ganancia) > 0 ? `costo ${formatCOP(cap._costo)} · ganancia ${formatCOP(cap._ganancia)}` : '';
+}
 function renderCapitulo(cap, idx, trabajadoresCliente) {
   const codigo = String(idx + 1);
   return `
@@ -3468,7 +3566,16 @@ function renderCapitulo(cap, idx, trabajadoresCliente) {
         <button class="chapter-toggle" data-action="toggle-capitulo" data-id="${cap.id}">${cap.colapsado ? '▸' : '▾'}</button>
         <span class="chapter-code mono">${codigo}</span>
         <input class="chapter-name-input" data-entidad="capitulo" data-id="${cap.id}" data-campo="nombre" value="${esc(cap.nombre)}">
-        <span class="chapter-subtotal" data-subtotal-cap="${cap.id}">${formatCOP(cap._subtotal)}</span>
+        ${_columnaGananciaCapituloDisponible ? `
+        <label class="chapter-ganancia" title="Ganancia sobre lo que cuesta todo el capítulo. El cliente no la ve: queda repartida dentro de los precios unitarios.">
+          <span>Ganancia</span>
+          <input class="input w-num" data-entidad="capitulo" data-id="${cap.id}" data-campo="ganancia" data-porcentaje ${atributosCampoNumerico(cap.ganancia, { porcentaje: true })}>
+          <span>%</span>
+        </label>` : ''}
+        <div class="chapter-totales">
+          <span class="chapter-subtotal" data-subtotal-cap="${cap.id}">${formatCOP(cap._subtotal)}</span>
+          <span class="chapter-costo" data-costo-cap="${cap.id}">${textoCostoDeCapitulo(cap)}</span>
+        </div>
         <button class="btn btn-icon btn-ghost" data-action="mover-capitulo-arriba" data-id="${cap.id}" title="Subir">↑</button>
         <button class="btn btn-icon btn-ghost" data-action="mover-capitulo-abajo" data-id="${cap.id}" title="Bajar">↓</button>
         <button class="btn btn-icon btn-danger" data-action="eliminar-capitulo" data-id="${cap.id}" title="Eliminar capítulo">🗑</button>
@@ -3477,7 +3584,7 @@ function renderCapitulo(cap, idx, trabajadoresCliente) {
         ${cap.items.length === 0 ? `<p style="color:var(--ink-faint);font-size:.85rem;padding:6px 4px;">Sin ítems todavía.</p>` : `
         <div class="table-wrap"><table>
           <thead><tr><th>Ítem</th><th>Descripción</th><th>Und</th><th class="num">Cant.</th><th class="num">Precio unit.</th><th class="num">Total</th><th></th></tr></thead>
-          <tbody>${cap.items.map((it, i) => renderItemRow(it, codigo, i, trabajadoresCliente)).join('')}</tbody>
+          <tbody>${cap.items.map((it, i) => renderItemRow(it, codigo, i, trabajadoresCliente, cap)).join('')}</tbody>
         </table></div>`}
         <div class="chapter-add-item"><button class="btn btn-sm" data-action="crear-item" data-id="${cap.id}">+ Agregar ítem</button></div>
       </div>
@@ -3490,7 +3597,8 @@ function catalogoOpcionesPorFiltroItem(filtro) {
   if (filtro === 'manoObra') return state.catalogoManoObra;
   return [...state.catalogo.filter(c => c.estado === 'activo'), ...state.catalogoServicios, ...state.catalogoManoObra];
 }
-function renderItemRow(it, codigoCap, idx, trabajadoresCliente = []) {
+function renderItemRow(it, codigoCap, idx, trabajadoresCliente = [], cap = null) {
+  const gananciaCap = cap ? numero(cap.ganancia) : 0;
   const codigo = idx === 0 ? codigoCap : `${codigoCap}.${idx}`;
   return `
     <tr data-id="${it.id}">
@@ -3515,9 +3623,9 @@ function renderItemRow(it, codigoCap, idx, trabajadoresCliente = []) {
       <td><input class="table-input w-num" data-entidad="item" data-id="${it.id}" data-campo="cantidad" data-numerico ${atributosCampoNumerico(it.cantidad)}></td>
       <td style="text-align:right">
         <button class="price-btn" data-action="abrir-modal-item" data-id="${it.id}">
-          <span class="price-num" data-price-item="${it.id}">${formatCOP(it._precioUnitario)}</span>${numero(it.gananciaDirecto) > 0 ? `<span class="tag-precio" title="Precio con ganancia incluida">+${formatPorcentaje(it.gananciaDirecto)}</span>` : ''}
+          <span class="price-num" data-price-item="${it.id}">${formatCOP(it._precioUnitario)}</span>${gananciaCap > 0 ? `<span class="tag-precio" title="Lleva incluida la ganancia del capítulo">+${formatPorcentaje(gananciaCap)}</span>` : ''}
         </button>
-        ${numero(it.gananciaDirecto) > 0 ? `<div class="price-costo" data-costo-item="${it.id}">costo: ${formatCOP(it._precioBase)}</div>` : ''}
+        ${gananciaCap > 0 ? `<div class="price-costo" data-costo-item="${it.id}">costo: ${formatCOP(it._precioBase)}</div>` : ''}
       </td>
       <td class="num" data-total-item="${it.id}">${formatCOP(it._total)}</td>
       <td>
@@ -3536,6 +3644,8 @@ function refrescarNumerosEditor() {
   p.capitulos.forEach(cap => {
     const capEl = document.querySelector(`[data-subtotal-cap="${cap.id}"]`);
     if (capEl) capEl.textContent = formatCOP(cap._subtotal);
+    const capCosto = document.querySelector(`[data-costo-cap="${cap.id}"]`);
+    if (capCosto) capCosto.textContent = textoCostoDeCapitulo(cap);
     cap.items.forEach(it => {
       const totalEl = document.querySelector(`[data-total-item="${it.id}"]`);
       if (totalEl) totalEl.textContent = formatCOP(it._total);
@@ -3587,6 +3697,7 @@ function renderModalItem() {
   const f = encontrarItemGlobal(p, ui.modalItemId);
   if (!f) return;
   const it = f.item;
+  const gananciaCap = f.cap ? numero(f.cap.ganancia) : 0;
   const modal = document.getElementById('modal-content');
   modal.innerHTML = `
     <div class="modal-head">
@@ -3600,14 +3711,11 @@ function renderModalItem() {
           <div class="hint" style="margin-top:5px;">Lo que te cuesta a ti. No aparece en el documento.</div>
         </div>
         <div class="field">
-          <label>Ganancia</label>
-          ${_columnaGananciaDisponible ? `
+          <label>Ganancia del capítulo</label>
           <div style="display:flex;align-items:center;gap:8px;">
-            <input class="input w-num" style="width:96px;text-align:right" data-entidad="item" data-id="${it.id}" data-campo="gananciaDirecto" data-porcentaje ${atributosCampoNumerico(it.gananciaDirecto, { porcentaje: true })}>
-            <span style="color:var(--ink-soft);">%</span>
+            <b class="mono" style="font-size:1.05rem;">${formatPorcentaje(gananciaCap)}</b>
           </div>
-          <div class="hint" style="margin-top:5px;">Se suma al costo. El cliente nunca la ve.</div>
-          ` : `<div class="hint">Para poder sumar ganancia, falta correr una vez <b>agregar-ganancia-directa.sql</b> en Supabase.</div>`}
+          <div class="hint" style="margin-top:5px;">La ganancia se pone una vez para todo el capítulo <b>${esc(f.cap.nombre) || 'sin nombre'}</b>, en su encabezado. Acá solo se ve cómo queda este ítem.</div>
         </div>
       </div>
       <div class="resumen-precio">
@@ -3618,6 +3726,238 @@ function renderModalItem() {
     <div class="modal-foot"><button class="btn btn-primary" data-action="cerrar-modal">Listo</button></div>
   `;
 }
+/* ---------- Categorías ----------
+   Un área propia para crear, renombrar y eliminar las categorías. Hoy son las de los materiales; la
+   tabla guarda un `tipo` para las que vayan surgiendo más adelante.
+   El material guarda el NOMBRE de su categoría (no un código), así que renombrar una categoría
+   cambia también ese nombre en todos los materiales que la tienen — si no, quedarían apuntando a
+   algo que ya no existe. */
+function materialesDeCategoria(nombre) {
+  return state.catalogo.filter(m => (m.categoria || '') === nombre);
+}
+function renderVistaCategorias() {
+  const cont = document.getElementById('categorias-contenido');
+  if (!cont) return;
+  if (!_tablaCategoriasDisponible) {
+    cont.innerHTML = `<div class="empty-state"><p>Para usar las categorías falta correr una vez el archivo <b>cambios-categorias-nit-ganancia.sql</b> en Supabase.</p></div>`;
+    return;
+  }
+  const lista = categoriasDeMateriales();
+  const sinCategoria = state.catalogo.filter(m => !m.categoria).length;
+  if (lista.length === 0) {
+    cont.innerHTML = `<div class="empty-state"><p>Todavía no hay categorías. Crea la primera con el botón de arriba y después elígela al editar un material.</p></div>`;
+    return;
+  }
+  cont.innerHTML = `
+    <div class="table-wrap"><table>
+      <thead><tr><th>Categoría</th><th class="num">Materiales</th><th></th></tr></thead>
+      <tbody>${lista.map(c => `
+        <tr data-id="${c.id}">
+          <td>${esc(c.nombre) || '<span style="color:var(--ink-faint)">Sin nombre</span>'}</td>
+          <td class="num">${materialesDeCategoria(c.nombre).length}</td>
+          <td class="acciones-fila">
+            <button class="btn btn-icon btn-ghost" data-action="editar-categoria" data-id="${c.id}" title="Cambiar el nombre">✏️</button>
+            <button class="btn btn-icon btn-danger" data-action="eliminar-categoria" data-id="${c.id}" title="Eliminar">🗑</button>
+          </td>
+        </tr>`).join('')}</tbody>
+    </table></div>
+    ${sinCategoria > 0 ? `<p class="hint" style="margin-top:12px;">${sinCategoria} material${sinCategoria === 1 ? '' : 'es'} sin categoría. Se les pone una al editarlos en el Catálogo.</p>` : ''}
+  `;
+}
+function crearCategoria() {
+  if (!_tablaCategoriasDisponible) { renderVistaCategorias(); return; }
+  ui.modalCategoriaId = 'nueva';
+  renderModalCategoria();
+  document.getElementById('modal-overlay').classList.add('is-open');
+}
+function abrirModalCategoria(id) {
+  if (!state.categorias.some(c => c.id === id)) return;
+  ui.modalCategoriaId = id;
+  renderModalCategoria();
+  document.getElementById('modal-overlay').classList.add('is-open');
+}
+function cerrarModalCategoria() {
+  ui.modalCategoriaId = null;
+  document.getElementById('modal-overlay').classList.remove('is-open');
+  renderVistaCategorias();
+}
+/* A diferencia del resto de la app, el nombre de la categoría NO se guarda mientras se escribe: se
+   guarda al darle Guardar. Es a propósito — renombrar arrastra el cambio a todos los materiales que
+   la usan, y hacer eso con cada letra tecleada sería reescribir el catálogo entero letra por letra. */
+function renderModalCategoria() {
+  const esNueva = ui.modalCategoriaId === 'nueva';
+  const c = esNueva ? null : state.categorias.find(x => x.id === ui.modalCategoriaId);
+  if (!esNueva && !c) { cerrarModalCategoria(); return; }
+  const enUso = c ? materialesDeCategoria(c.nombre).length : 0;
+  document.getElementById('modal-content').innerHTML = `
+    <div class="modal-head">
+      <h3>${esNueva ? 'Nueva categoría' : 'Cambiar el nombre de la categoría'}</h3>
+      <button class="btn btn-icon btn-ghost" data-action="cerrar-modal-categoria">✕</button>
+    </div>
+    <div class="field">
+      <label>Nombre</label>
+      <input class="input" id="categoria-nombre" value="${esc(c ? c.nombre : '')}" placeholder="Ej.: Cementos y agregados" autocomplete="off">
+      ${enUso > 0 ? `<div class="hint" style="margin-top:6px;">Al cambiarlo, los <b>${enUso}</b> materiales que la usan quedan con el nombre nuevo.</div>` : ''}
+    </div>
+    <div id="categoria-error" class="login-error" style="display:none;margin-top:12px;"></div>
+    <div class="modal-foot"><button class="btn btn-primary" data-action="guardar-categoria">Guardar</button></div>
+  `;
+  const campo = document.getElementById('categoria-nombre');
+  if (campo && typeof campo.focus === 'function') campo.focus();
+}
+function guardarCategoria() {
+  const esNueva = ui.modalCategoriaId === 'nueva';
+  const campo = document.getElementById('categoria-nombre');
+  const error = document.getElementById('categoria-error');
+  const mostrarError = (texto) => { if (error) { error.textContent = texto; error.style.display = 'block'; } };
+  const nombre = (campo ? campo.value : '').trim();
+  if (!nombre) { mostrarError('Ponle un nombre a la categoría.'); return; }
+  const repetida = state.categorias.some(x =>
+    (x.tipo || 'material') === 'material' && x.id !== ui.modalCategoriaId &&
+    String(x.nombre).trim().toLowerCase() === nombre.toLowerCase());
+  if (repetida) { mostrarError('Ya existe una categoría con ese nombre.'); return; }
+
+  if (esNueva) {
+    const orden = state.categorias.reduce((m, x) => Math.max(m, x.orden || 0), 0) + 1;
+    state.categorias.push({ id: uid('cate'), tipo: 'material', nombre, orden });
+  } else {
+    const c = state.categorias.find(x => x.id === ui.modalCategoriaId);
+    if (!c) { cerrarModalCategoria(); return; }
+    const anterior = c.nombre;
+    c.nombre = nombre;
+    if (anterior !== nombre) materialesDeCategoria(anterior).forEach(m => { m.categoria = nombre; });
+  }
+  guardar();
+  cerrarModalCategoria();
+  if (ui.vista === 'catalogo') renderCatalogo();
+}
+async function eliminarCategoria(id) {
+  const c = state.categorias.find(x => x.id === id);
+  if (!c) return;
+  const usados = materialesDeCategoria(c.nombre);
+  const mensaje = usados.length === 0
+    ? `¿Eliminar la categoría "${c.nombre}"?`
+    : `¿Eliminar la categoría "${c.nombre}"? Los ${usados.length} materiales que la tienen quedan sin categoría (no se borra ningún material).`;
+  if (!await confirmarAccion(mensaje)) return;
+  usados.forEach(m => { m.categoria = ''; });
+  state.categorias = state.categorias.filter(x => x.id !== id);
+  guardar();
+  renderVistaCategorias();
+  if (ui.vista === 'catalogo') renderCatalogo();
+}
+
+/* ---------- ventana para editar un elemento del catálogo ----------
+   Los campos son los mismos de siempre (data-entidad/data-campo): se guardan solos mientras se
+   escribe, igual que en el resto de la app. El botón "Listo" solo cierra. */
+const CATALOGOS = {
+  material: { titulo: 'material', lista: () => state.catalogo, entidad: 'catalogo' },
+  servicio: { titulo: 'servicio', lista: () => state.catalogoServicios, entidad: 'catalogoServicio' },
+  manoObra: { titulo: 'labor de mano de obra', lista: () => state.catalogoManoObra, entidad: 'catalogoManoObra' }
+};
+function elementoDeCatalogo(tipo, id) {
+  const conf = CATALOGOS[tipo];
+  return conf ? (conf.lista().find(x => x.id === id) || null) : null;
+}
+function abrirModalCatalogo(tipo, id) {
+  if (!elementoDeCatalogo(tipo, id)) return;
+  ui.modalCatalogoTipo = tipo;
+  ui.modalCatalogoId = id;
+  renderModalCatalogo();
+  document.getElementById('modal-overlay').classList.add('is-open');
+}
+function cerrarModalCatalogo() {
+  ui.modalCatalogoId = null;
+  ui.modalCatalogoTipo = null;
+  document.getElementById('modal-overlay').classList.remove('is-open');
+  renderCatalogo();
+}
+// El desplegable de categorías ofrece las del área de Categorías. Si este material tiene escrita una
+// que ya no está en la lista (viene de antes, o la borraron), se agrega igual como opción para no
+// cambiársela por debajo sin que nadie lo pida.
+function opcionesDeCategoria(actual) {
+  const nombres = categoriasDeMateriales().map(c => c.nombre);
+  if (actual && !nombres.some(nb => nb === actual)) nombres.push(actual);
+  return `<option value="">— sin categoría —</option>` +
+    nombres.map(nb => `<option value="${esc(nb)}" ${nb === actual ? 'selected' : ''}>${esc(nb)}</option>`).join('');
+}
+function renderModalCatalogo() {
+  const tipo = ui.modalCatalogoTipo;
+  const c = elementoDeCatalogo(tipo, ui.modalCatalogoId);
+  if (!c) { cerrarModalCatalogo(); return; }
+  const entidad = CATALOGOS[tipo].entidad;
+  const campos = tipo === 'material' ? `
+      <div class="field-grid">
+        <div class="field" style="grid-column:1/-1;">
+          <label>Nombre</label>
+          <input class="input" data-entidad="${entidad}" data-id="${c.id}" data-campo="nombre" value="${esc(c.nombre)}" placeholder="Nombre del material">
+        </div>
+        <div class="field">
+          <label>Categoría</label>
+          <select class="select" data-entidad="${entidad}" data-id="${c.id}" data-campo="categoria">${opcionesDeCategoria(c.categoria)}</select>
+          <div class="hint" style="margin-top:5px;">Las categorías se crean y se renombran en <b>Categorías</b>, en el menú de la izquierda.</div>
+        </div>
+        <div class="field">
+          <label>Unidad</label>
+          <input class="input" data-entidad="${entidad}" data-id="${c.id}" data-campo="unidad" value="${esc(c.unidad)}" placeholder="und, kg, m2…">
+        </div>
+        <div class="field">
+          <label>Precio habitual</label>
+          <input class="input" style="text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="${entidad}" data-id="${c.id}" data-campo="precio" data-numerico ${atributosCampoNumerico(c.precio)}>
+          <div class="hint" style="margin-top:5px;">IVA ${formatPorcentaje(IVA_MATERIALES)}: <b data-iva-material>${formatCOP(ivaDeMaterial(c))}</b> · con IVA: <b data-con-iva-material>${formatCOP(numero(c.precio) + ivaDeMaterial(c))}</b></div>
+        </div>
+        <div class="field">
+          <label>Proveedor</label>
+          <input class="input" data-entidad="${entidad}" data-id="${c.id}" data-campo="proveedor" value="${esc(c.proveedor)}">
+        </div>
+        <div class="field">
+          <label>Estado</label>
+          <select class="select" data-entidad="${entidad}" data-id="${c.id}" data-campo="estado">${ESTADOS_CATALOGO.map(e => `<option ${e === c.estado ? 'selected' : ''}>${e}</option>`).join('')}</select>
+          <div class="hint" style="margin-top:5px;">Un material descontinuado no aparece al buscar dentro de un presupuesto.</div>
+        </div>
+        <div class="field" style="grid-column:1/-1;">
+          <label>Observaciones</label>
+          <textarea class="textarea" data-entidad="${entidad}" data-id="${c.id}" data-campo="observaciones">${esc(c.observaciones || '')}</textarea>
+        </div>
+      </div>` : tipo === 'manoObra' ? `
+      <div class="field-grid">
+        <div class="field" style="grid-column:1/-1;">
+          <label>Nombre</label>
+          <input class="input" data-entidad="${entidad}" data-id="${c.id}" data-campo="nombre" value="${esc(c.nombre)}" placeholder="Nombre de la labor">
+        </div>
+        <div class="field">
+          <label>Unidad</label>
+          <input class="input" data-entidad="${entidad}" data-id="${c.id}" data-campo="unidad" value="${esc(c.unidad)}" placeholder="und, m2, ml…">
+        </div>
+        <div class="field">
+          <label>Precio unitario</label>
+          <input class="input" style="text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="${entidad}" data-id="${c.id}" data-campo="precio" data-numerico ${atributosCampoNumerico(c.precio)}>
+        </div>
+      </div>` : `
+      <div class="field">
+        <label>Nombre</label>
+        <input class="input" data-entidad="${entidad}" data-id="${c.id}" data-campo="nombre" value="${esc(c.nombre)}" placeholder="Nombre del servicio">
+      </div>`;
+  document.getElementById('modal-content').innerHTML = `
+    <div class="modal-head">
+      <h3>Editar ${CATALOGOS[tipo].titulo}</h3>
+      <button class="btn btn-icon btn-ghost" data-action="cerrar-modal-catalogo">✕</button>
+    </div>
+    ${campos}
+    <div class="modal-foot"><button class="btn btn-primary" data-action="cerrar-modal-catalogo">Listo</button></div>
+  `;
+}
+// El IVA de la ventana se recalcula mientras se escribe el precio, sin repintar el campo (eso movería
+// el cursor de quien está escribiendo).
+function refrescarIvaModalCatalogo() {
+  if (ui.modalCatalogoTipo !== 'material') return;
+  const c = elementoDeCatalogo('material', ui.modalCatalogoId);
+  if (!c) return;
+  const iva = document.querySelector('[data-iva-material]');
+  if (iva) iva.textContent = formatCOP(ivaDeMaterial(c));
+  const conIva = document.querySelector('[data-con-iva-material]');
+  if (conIva) conIva.textContent = formatCOP(numero(c.precio) + ivaDeMaterial(c));
+}
+
 /* ---------- modal de registro de costos de personal ---------- */
 function renderModalPersonal() {
   const r = registroPersonalActivo();
@@ -3850,20 +4190,28 @@ function campoPorcentaje(entidad, id, campo, etiqueta, valorDecimal) {
 // Filas de catálogo, cada una en su propia función (antes escritas en línea dentro de
 // renderCatalogo()) — así Realtime puede reconstruir UNA fila puntual con reemplazarFilaConservandoElCursor()
 // sin duplicar la plantilla, igual que ya existe renderItemRow() para los ítems de un presupuesto.
+/* Las filas del catálogo ya no se escriben directo: cada una se edita con su lápiz, en una ventana
+   donde se ve claro qué es cada cosa (y la categoría se elige de la lista, no se escribe a mano). */
 function renderFilaCatalogoServicio(c) {
   return `
         <tr data-id="${c.id}">
-          <td><input class="table-input" style="min-width:280px" data-entidad="catalogoServicio" data-id="${c.id}" data-campo="nombre" value="${esc(c.nombre)}"></td>
-          <td><button class="btn btn-icon btn-danger" data-action="eliminar-catalogo-servicio" data-id="${c.id}" title="Eliminar">🗑</button></td>
+          <td>${esc(c.nombre) || '<span style="color:var(--ink-faint)">Sin nombre</span>'}</td>
+          <td class="acciones-fila">
+            <button class="btn btn-icon btn-ghost" data-action="editar-catalogo-servicio" data-id="${c.id}" title="Editar">✏️</button>
+            <button class="btn btn-icon btn-danger" data-action="eliminar-catalogo-servicio" data-id="${c.id}" title="Eliminar">🗑</button>
+          </td>
         </tr>`;
 }
 function renderFilaCatalogoManoObra(c) {
   return `
         <tr data-id="${c.id}">
-          <td><input class="table-input" style="min-width:260px" data-entidad="catalogoManoObra" data-id="${c.id}" data-campo="nombre" value="${esc(c.nombre)}"></td>
-          <td><input class="table-input w-unidad" data-entidad="catalogoManoObra" data-id="${c.id}" data-campo="unidad" value="${esc(c.unidad)}"></td>
-          <td class="num"><input class="table-input" style="text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="catalogoManoObra" data-id="${c.id}" data-campo="precio" data-numerico ${atributosCampoNumerico(c.precio)}></td>
-          <td><button class="btn btn-icon btn-danger" data-action="eliminar-catalogo-mano-obra" data-id="${c.id}" title="Eliminar">🗑</button></td>
+          <td>${esc(c.nombre) || '<span style="color:var(--ink-faint)">Sin nombre</span>'}</td>
+          <td>${esc(c.unidad)}</td>
+          <td class="num">${formatCOP(c.precio)}</td>
+          <td class="acciones-fila">
+            <button class="btn btn-icon btn-ghost" data-action="editar-catalogo-mano-obra" data-id="${c.id}" title="Editar">✏️</button>
+            <button class="btn btn-icon btn-danger" data-action="eliminar-catalogo-mano-obra" data-id="${c.id}" title="Eliminar">🗑</button>
+          </td>
         </tr>`;
 }
 function renderFilaCatalogoMaterial(c) {
@@ -3871,14 +4219,18 @@ function renderFilaCatalogoMaterial(c) {
   const viejo = dias > 180;
   return `
       <tr data-id="${c.id}">
-        <td><input class="table-input" style="min-width:200px" data-entidad="catalogo" data-id="${c.id}" data-campo="nombre" value="${esc(c.nombre)}"></td>
-        <td><input class="table-input" style="width:140px" data-entidad="catalogo" data-id="${c.id}" data-campo="categoria" value="${esc(c.categoria)}"></td>
-        <td><input class="table-input w-unidad" data-entidad="catalogo" data-id="${c.id}" data-campo="unidad" value="${esc(c.unidad)}"></td>
-        <td class="num"><input class="table-input" style="text-align:right;font-family:'IBM Plex Mono',monospace" data-entidad="catalogo" data-id="${c.id}" data-campo="precio" data-numerico ${atributosCampoNumerico(c.precio)}></td>
-        <td><input class="table-input" style="width:130px" data-entidad="catalogo" data-id="${c.id}" data-campo="proveedor" value="${esc(c.proveedor)}"></td>
-        <td><select class="table-input" data-entidad="catalogo" data-id="${c.id}" data-campo="estado">${ESTADOS_CATALOGO.map(e => `<option ${e === c.estado ? 'selected' : ''}>${e}</option>`).join('')}</select></td>
+        <td>${esc(c.nombre) || '<span style="color:var(--ink-faint)">Sin nombre</span>'}</td>
+        <td>${c.categoria ? esc(c.categoria) : '<span style="color:var(--ink-faint)">—</span>'}</td>
+        <td>${esc(c.unidad)}</td>
+        <td class="num">${formatCOP(c.precio)}</td>
+        <td class="num" title="IVA del ${formatPorcentaje(IVA_MATERIALES)} sobre el precio habitual · con IVA: ${formatCOP(numero(c.precio) + ivaDeMaterial(c))}">${formatCOP(ivaDeMaterial(c))}</td>
+        <td>${esc(c.proveedor)}</td>
+        <td><span class="badge badge-${c.estado === 'descontinuado' ? 'rechazado' : 'aprobado'}">${esc(c.estado)}</span></td>
         <td class="mono" style="font-size:.78rem;${viejo ? 'color:var(--amber)' : 'color:var(--ink-faint)'}" title="${viejo ? 'Precio con más de 6 meses sin actualizar' : ''}">${formatFechaCorta(c.fechaActualizacion)}${viejo ? ' ⚠' : ''}</td>
-        <td><button class="btn btn-icon btn-danger" data-action="eliminar-catalogo" data-id="${c.id}" title="Eliminar">🗑</button></td>
+        <td class="acciones-fila">
+          <button class="btn btn-icon btn-ghost" data-action="editar-catalogo" data-id="${c.id}" title="Editar">✏️</button>
+          <button class="btn btn-icon btn-danger" data-action="eliminar-catalogo" data-id="${c.id}" title="Eliminar">🗑</button>
+        </td>
       </tr>`;
 }
 function renderCatalogo() {
@@ -3932,7 +4284,7 @@ function renderCatalogo() {
     return;
   }
   cont.innerHTML = toggle + selectorEstado + `<div class="table-wrap"><table>
-    <thead><tr><th>Nombre</th><th>Categoría</th><th>Und</th><th class="num">Precio habitual</th><th>Proveedor</th><th>Estado</th><th>Actualizado</th><th></th></tr></thead>
+    <thead><tr><th>Nombre</th><th>Categoría</th><th>Und</th><th class="num">Precio habitual</th><th class="num">IVA ${formatPorcentaje(IVA_MATERIALES)}</th><th>Proveedor</th><th>Estado</th><th>Actualizado</th><th></th></tr></thead>
     <tbody>${items.map(renderFilaCatalogoMaterial).join('')}</tbody>
   </table></div>`;
 }
@@ -3954,7 +4306,7 @@ function renderVistaCliente() {
         </div>
       </div>
       <div class="doc-meta">
-        <div><span class="k">Cliente:</span> ${esc(nombreClienteDePresupuesto(p)) || '—'}</div>
+        <div><span class="k">Cliente:</span> ${esc(nombreClienteDePresupuesto(p)) || '—'}${nitDelPresupuesto(p) ? ` — NIT ${esc(nitDelPresupuesto(p))}` : ''}</div>
         <div><span class="k">Proyecto:</span> ${esc(p.proyecto) || '—'}</div>
         <div><span class="k">Ubicación:</span> ${esc(p.ubicacion) || '—'}</div>
         <div><span class="k">Validez de la propuesta:</span> ${esc(p.validezDias)} días</div>
@@ -4033,7 +4385,7 @@ function renderVistaCostosPersonal() {
         </div>
       </div>
       <div class="doc-meta">
-        <div><span class="k">Cliente:</span> ${esc(c.nombre) || '—'}</div>
+        <div><span class="k">Cliente:</span> ${esc(c.nombre) || '—'}${c.nit ? ` — NIT ${esc(c.nit)}` : ''}</div>
         ${c.personaContacto ? `<div><span class="k">Persona de contacto:</span> ${esc(c.personaContacto)}</div>` : ''}
       </div>
 
@@ -4218,6 +4570,7 @@ function renderEditorCliente() {
       <div class="card" style="padding:18px 20px;">
         <div class="field-grid">
           ${campoTexto('cliente', c.id, 'nombre', 'Nombre', c.nombre)}
+          ${_columnaNitDisponible ? campoTexto('cliente', c.id, 'nit', 'NIT', c.nit) : ''}
           ${campoTexto('cliente', c.id, 'telefono', 'Teléfono', c.telefono)}
           ${campoTexto('cliente', c.id, 'correo', 'Correo', c.correo)}
           ${campoTexto('cliente', c.id, 'direccion', 'Dirección', c.direccion)}
@@ -4867,6 +5220,7 @@ const AUDITORIA_TABLAS = {
   conceptos_personal: { etiqueta: 'Concepto de personal', campo: 'descripcion' },
   anticipos_personal: { etiqueta: 'Anticipo de personal', campo: 'descripcion' },
   catalogo_materiales: { etiqueta: 'Catálogo · Material', campo: 'nombre' },
+  categorias: { etiqueta: 'Categoría', campo: 'nombre' },
   catalogo_servicios: { etiqueta: 'Catálogo · Servicio', campo: 'nombre' },
   catalogo_mano_obra: { etiqueta: 'Catálogo · Mano de obra', campo: 'nombre' },
   profiles: { etiqueta: 'Usuario', campo: 'nombre' },
@@ -5183,6 +5537,12 @@ function renderAdminInstrucciones() {
       <p style="color:var(--ink-soft);margin-bottom:6px;"><b>Operario</b> — acceso normal: clientes, presupuestos, catálogo y costos de personal. No entra a Configuraciones ni ve la Auditoría, y no puede eliminar un presupuesto completo (sí puede seguir agregando/eliminando capítulos e ítems dentro de uno).</p>
       <p style="color:var(--ink-soft);margin-bottom:6px;"><b>Supervisor</b> — solo ve su propia pantalla de Mano de obra: puede ver (sin editar) el PDF final de los presupuestos de un cliente, y registrar, corregir o eliminar anticipos/pagos de mano de obra. No ve catálogo, configuración ni el editor de presupuestos.</p>
       <p style="color:var(--ink-soft);margin-bottom:20px;"><b>Admin</b> — todo lo anterior, más crear usuarios y cambiarles el rol, ver la auditoría de quién hizo qué, descargar copias de seguridad manuales, y editar la configuración general de la empresa (AIU, IVA y ganancia por defecto).</p>
+      <h2 style="font-size:1rem;margin-bottom:8px;">Catálogos y categorías</h2>
+      <p style="color:var(--ink-soft);margin-bottom:6px;">Hay tres catálogos independientes — <b>Materiales</b>, <b>Servicios</b> y <b>Mano de obra</b> — y cada uno se maneja por su lado. Las filas no se escriben encima: cada elemento se edita con su <b>lápiz ✏️</b>, en una ventana donde se le pone nombre, categoría, unidad y precio. Al agregar uno nuevo, esa ventana se abre sola.</p>
+      <p style="color:var(--ink-soft);margin-bottom:6px;">La <b>categoría</b> de un material se elige de una lista, y esa lista se maneja en <b>Categorías</b> (menú de la izquierda). Ahí se crean, se renombran y se eliminan. Al renombrar una categoría, el nombre cambia también en todos los materiales que la tenían; al eliminarla, esos materiales quedan <i>sin categoría</i> — nunca se borra un material.</p>
+      <p style="color:var(--ink-soft);margin-bottom:20px;">En Materiales, la columna <b>IVA ${formatPorcentaje(IVA_MATERIALES)}</b> no se escribe: siempre es el ${formatPorcentaje(IVA_MATERIALES)} del precio habitual, calculado solo. Sirve de referencia al comprar; el presupuesto al cliente no la usa.</p>
+      <h2 style="font-size:1rem;margin-bottom:8px;">La ganancia va por capítulo</h2>
+      <p style="color:var(--ink-soft);margin-bottom:20px;">El precio que se escribe en cada ítem es <b>el costo</b>. La ganancia se pone una sola vez en el <b>encabezado del capítulo</b>, como porcentaje sobre lo que cuesta todo ese capítulo. Debajo del subtotal se ve cuánto es costo y cuánto es ganancia. En el documento que ve el cliente, esa ganancia queda repartida dentro de los precios unitarios: <b>el cliente nunca ve el costo ni el porcentaje</b>. Y a un trabajador asociado a un ítem se le sigue pagando el costo, nunca el precio con ganancia.</p>
       <h2 style="font-size:1rem;margin-bottom:8px;">¿Necesitas un rol nuevo o un permiso distinto?</h2>
       <p style="color:var(--ink-soft);">
         Los roles se pueden ampliar más adelante según lo necesite el equipo. Si hace falta uno nuevo, coméntaselo a quien administra el sistema.
@@ -5285,6 +5645,8 @@ document.body.addEventListener('click', e => {
       else if (ui.modalUsuarioAbierto) cerrarModalNuevoUsuario();
       else if (ui.modalEditarUsuarioId) cerrarModalEditarUsuario();
       else if (ui.modalPersonalId) cerrarModalPersonal();
+      else if (ui.modalCategoriaId) cerrarModalCategoria();
+      else if (ui.modalCatalogoId) cerrarModalCatalogo();
       else cerrarModalItem();
     } },
     'crear-catalogo': () => {
@@ -5293,6 +5655,15 @@ document.body.addEventListener('click', e => {
       else crearElementoCatalogo();
     },
     'eliminar-catalogo': () => eliminarElementoCatalogo(id),
+    'editar-catalogo': () => abrirModalCatalogo('material', id),
+    'editar-catalogo-servicio': () => abrirModalCatalogo('servicio', id),
+    'editar-catalogo-mano-obra': () => abrirModalCatalogo('manoObra', id),
+    'cerrar-modal-catalogo': () => cerrarModalCatalogo(),
+    'crear-categoria': () => crearCategoria(),
+    'editar-categoria': () => abrirModalCategoria(id),
+    'eliminar-categoria': () => eliminarCategoria(id),
+    'guardar-categoria': () => guardarCategoria(),
+    'cerrar-modal-categoria': () => cerrarModalCategoria(),
     'catalogo-subvista': () => {
       ui.catalogoSubVista = btn.dataset.subvista;
       ui.filtroCatalogo = '';
